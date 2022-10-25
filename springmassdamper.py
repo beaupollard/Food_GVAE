@@ -43,7 +43,7 @@ def run_sim():
         return F
 
     ## Run 4 different simulations where each one has different parameters ##
-    for j in range(5):
+    for j in range(10):
 
         k=[abs(random.gauss(20.,5.)),abs(random.gauss(20.,5.)),abs(random.gauss(20.,5.))]
         m=[abs(random.gauss(30.,10.)),abs(random.gauss(30.,10.)),abs(random.gauss(30.,10.))]

@@ -62,17 +62,11 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)
 def train():
     model.train()
 
-    # xout=np.zeros((1,9))
-    # xin=np.zeros((1,9))
-    # zout=np.zeros((1,6))
-    # lr=[]
-    # lk=[]
     for i in data_train2:
         optimizer.zero_grad()
         z = model.encode(i.x,i.edge_index)
         xt2 = model.decode(torch.reshape(z,(BS,6)))
         xt0=xt2[:,1:10]
-        # xt1=sigL(xt2[:,9:12]) # This has something to do with the edges
         loss = loss_in(xt0,torch.reshape(i.y[:,:3],(xt0.size())))
 
         loss = loss + ((1 / i.num_nodes) * model.kl_loss())/100  # new line 
