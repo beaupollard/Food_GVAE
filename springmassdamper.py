@@ -7,14 +7,14 @@ import pandas as pd
 import random
 import math
 
-def run_sim():
+def run_sim(run_nums=1):
     ## Initialization ##
     tstart = 0
     tend = 100
     dt = 0.1
     t = np.arange(tstart,tend,dt)
     count=1
-    int_t = 5
+    int_t = 1
     x0=[]
     x1=[]
     x2=[]
@@ -23,9 +23,9 @@ def run_sim():
     x5=[]
     Fiout=[]
     count=1
-    xdes=0.25
+    xdes=0.5
     Fi=0
-
+    
     ## Integrate using RK4 ##
     def mydiff(x,t,m,k,c,xdes,Fi):
         F=PID(xdes,x[0],Fi)
@@ -39,19 +39,24 @@ def run_sim():
         return dxdt
 
     def PID(xdes,xin,Fi):
-        F=-(8*(xin-xdes)+0.6*Fi)
+        F=-(20*(xin-xdes)+0.0*Fi)
         return F
 
     ## Run 4 different simulations where each one has different parameters ##
-    for j in range(10):
+    for j in range(run_nums):
 
         k=[abs(random.gauss(20.,5.)),abs(random.gauss(20.,5.)),abs(random.gauss(20.,5.))]
         m=[abs(random.gauss(30.,10.)),abs(random.gauss(30.,10.)),abs(random.gauss(30.,10.))]
         c=[abs(random.gauss(10.,5.)),abs(random.gauss(10.,5.)),abs(random.gauss(10.,5.))]
-        x_int=[0.,random.gauss(0.,0.25),0.,random.gauss(0.,0.25),0.,random.gauss(0.,0.25)]
-
+        # x_int=[0.,random.gauss(0.,0.25),0.,random.gauss(0.,0.25),0.,random.gauss(0.,0.25)]
+        x_int=[0.,0.,0.,0.,0.,0.]
+        omega_des=math.pi/random.gauss(2.,0.5)#0.25*(k[0]/m[0])**0.5
+        xd_prev=[]
         for i in range(0,len(t),int_t):
+            
             tin=t[i:i+int_t+1]
+            xdes=x_int[0]+0.1*math.sin(omega_des*tin[-1])
+            xd_prev.append(xdes)
             Fiout = np.append(Fiout,np.ones(len(tin,)-1))
             x = odeint(mydiff, x_int, tin,args=(m,k,c,xdes,Fi))
             Fi=(x[-1,0]-xdes)+Fi
@@ -67,14 +72,15 @@ def run_sim():
             x_int=x[-1,:]
 
 
-    ## Recalculate the Forces ##
-    F=[]
-    Fi=0
-    for i,x in enumerate(x0):
-        F=np.append(F,PID(xdes,x,Fiout[i]))
+    # ## Recalculate the Forces ##
+    # F=[]
+    # Fi=0
+    # for i,x in enumerate(x4):
+    #     F=np.append(F,k[-1]*x+c[-1]*x5[i])
+        # F=np.append(F,PID(xdes,x,Fiout[i]))
 
     ## Add some artificial noise ##
-    nmax=0.0075
+    nmax=0.0055
     noise = np.random.normal(0, nmax, x0.shape)
     x0 = x0 + noise
     noise = np.random.normal(0, nmax, x0.shape)
@@ -88,8 +94,14 @@ def run_sim():
     noise = np.random.normal(0, nmax, x0.shape)
     x5 = x5 + noise
 
+    ## Calculate the Reaction Forces ##
+    F=[]
+    Fi=0
+    for i,x in enumerate(x4):
+        F=np.append(F,k[-1]*x+c[-1]*x5[i])
+
     ## Save ground truth data to text file ##
-    out_data=1
+    out_data=2
     zout=np.zeros((len(x0),6))
     for i in range(len(x0)):
         zout[i,:]=np.array([x0[i],x1[i],x2[i],x3[i],x4[i],x5[i]])
@@ -124,3 +136,5 @@ def run_sim():
 
     torch.save(data,os.path.join('./',f'data_{out_data}.pt'))
     return data
+
+run_sim(run_nums=1)

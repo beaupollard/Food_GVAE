@@ -10,8 +10,43 @@ import os
 from torch_geometric.nn import VGAE, MLP
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy import signal
 
-datalist=torch.load('data_1.pt')
+def apply_filter(xin,N=4,fc=5,dt=0.1):
+    fs=1/dt
+    w = fc / (fs / 2) # Normalize the frequency
+    b, a = signal.butter(5, w, 'low')
+    out2=[]
+    for i in range(len(xin[0,:])):
+        output = signal.filtfilt(b, a, xin[:,i])
+        out2.append(output)
+    return np.array(out2).T
+    
+
+    # return signal.sosfilt(sos,xin)
+
+def ploting(x,y):
+    
+    fig, axs = plt.subplots(3, 3)
+    for i in range(3):
+        axs[0, i].plot(x[:,i])
+        axs[0, i].plot(y[:,i])
+        axs[1, i].plot(x[:,i+3])
+        axs[1, i].plot(y[:,i+3])
+        axs[2, i].plot(x[:,i+6])
+        axs[2, i].plot(y[:,i+6])        
+    plt.show()
+
+def ploting_latent(x,y):
+    
+    fig, axs = plt.subplots(2, 3)
+    for i in range(3):
+        axs[0, i].plot(x[:,i])
+        axs[0, i].plot(y[:,i])
+        axs[1, i].plot(x[:,i+3])
+        axs[1, i].plot(y[:,i+3])
+    plt.show()
+
 
 class VariationalGCNEncoder(torch.nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -27,8 +62,8 @@ class VariationalGCNEncoder(torch.nn.Module):
 class DecoderMLP(torch.nn.Module):
     def __init__(self):
         super(DecoderMLP, self).__init__()
-        self.mlp1=MLP([6, 8, 9],batch_norm=False)
-        self.mlp_lin=MLP([6,24,48])
+        self.mlp1=MLP([latent_dim, 8, 9],batch_norm=False)
+        self.mlp_lin=MLP([latent_dim,24,latent_dim**2+2*latent_dim])
 
 
     def forward(self,z):
@@ -42,57 +77,91 @@ def write_csv(filename):
     yout=[]
     xout=[]
     A0=[]
+    B0=[]
+    O0=[]
     for i in datalist:
         u=i.edge_attribute
 
         ## Calculate z_t ##
         z = model.encode(i.x,i.edge_index)
-        xt, lin_t = model.decode(torch.reshape(z,(1,6)))
+        xt, lin_t = model.decode(torch.reshape(z,(1,latent_dim)))
 
         ## Form A, B and o matrices ##
-        A=torch.reshape(lin_t[:,:36],(1,6,6))
-        B=torch.reshape(lin_t[:,36:42],(1,6,1))
-        o=torch.reshape(lin_t[:,42:],(1,6,1))
-        # A0.append(np.linalg.eig(np.reshape(A.detach().numpy(),(6,6))))
+        A=torch.reshape(lin_t[0,:latent_dim**2],(1,latent_dim,latent_dim))
+        B=torch.reshape(lin_t[0,latent_dim**2:latent_dim**2+latent_dim],(1,latent_dim,1))
+        o=torch.reshape(lin_t[0,latent_dim**2+latent_dim:],(1,latent_dim,1))
+        # A0.append(np.linalg.eig(np.reshape(A.detach().numpy(),(latent_dim,latent_dim))))
+        A0.append((np.reshape(A.detach().numpy(),(1,latent_dim*latent_dim))))
+        B0.append((np.reshape(B.detach().numpy(),(1,latent_dim))))
+        O0.append((np.reshape(o.detach().numpy(),(1,latent_dim))))
 
         ## Calcutate z_t+1_tilde ##
-        zout1=torch.empty(1,6,requires_grad=False)
-        z2=torch.reshape(z,(6,1))
+        zout1=torch.empty(1,latent_dim,requires_grad=False)
+        z2=torch.reshape(z,(latent_dim,1))
         for j in range(1):
-            zout1[j,:]=torch.reshape(torch.reshape(A[j,:,:]@z2[:,0],(6,1))+B[j,:]*u[j]+o[j,:],(1,6))
+            zout1[j,:]=torch.reshape(torch.reshape(A[j,:,:]@z2[:,0],(latent_dim,1))+B[j,:]*u[j]+o[j,:],(1,latent_dim))
             
 
         ## Calculate z_t+1 ##
         z1 = model.encode(i.y,i.edge_index)
-        xt1, _ = model.decode(torch.reshape(z1,(1,6)))  
+        xt1, _ = model.decode(torch.reshape(z1,(1,latent_dim)))  
         if len(xout)==0:
             xout=xt1.detach().numpy().flatten()
             yout=i.y.detach().numpy().flatten()
-            zout=zout1.detach().numpy().flatten()
+            zout=z1.detach().numpy().flatten()
+            # zout=zout1.detach().numpy().flatten()
         else:
             yout=np.vstack((yout,i.y.detach().numpy().flatten()))
             xout=np.vstack((xout,xt1.detach().numpy().flatten()))
-            zout=np.vstack((zout,zout1.detach().numpy().flatten()))
+            zout=np.vstack((zout,z1.detach().numpy().flatten()))
 
-        # loss = loss+loss_in(z1.flatten(),zout.flatten())
-        # loss = loss+loss_in(xt,torch.reshape(i.x,(xt.size())))
+    Aout=np.load('./A.npy')
+    Bout=np.load('./B.npy')
+    Oout=np.load('./O.npy')
 
-        # loss = loss + ((1 / i.num_nodes) * model.kl_loss())/100  # new line 
-    # np.savetxt('zout.txt',zout)
-    # np.savetxt('xout.txt',xout)
-    # np.savetxt('yout.txt',yout)
+    # Aout=np.zeros(np.size(A0[0]))
+    # Bout=np.zeros(np.size(B0[0]))
+    # Oout=np.zeros(np.size(O0[0]))
+    # for i in range(len(A0)):
+    #     Aout=Aout+A0[i]
+    #     Bout=Bout+B0[i]
+    #     Oout=Oout+O0[i]
+    # Aout=np.reshape(Aout,(latent_dim,latent_dim))/len(A0)
+    # Bout=np.reshape(Bout,(latent_dim,1))/len(A0)
+    # Oout=np.reshape(Oout,(latent_dim,1))/len(A0)
+    zout_tilde=[]
+    for i in datalist:
+        u=i.edge_attribute
+        z = model.encode(i.x,i.edge_index)
+        ## Calcutate z_t+1_tilde ##
+        zout1=torch.empty(1,latent_dim,requires_grad=False)
+        z2=torch.reshape(z,(latent_dim,1))
+        # for j in range(1):
+        zout1=Aout@z2.detach().numpy().flatten()+(Bout)@u.detach().numpy().flatten()+np.reshape(Oout,(6,))
+        if len(zout_tilde)==0:
+            zout_tilde=zout1
+        else:
+            zout_tilde=np.vstack((zout_tilde,zout1))
+    # apply_filter(zout)
+    ploting_latent(apply_filter(zout,N=5,fc=1.5),apply_filter(zout_tilde,N=5,fc=1.5))
+    # ploting_latent(zout,zout_tilde)
     print("hey")
+    # np.save('./A.txt',Aout)
+    # np.save('./B.txt',Bout)
+    # np.save('./O.txt',Oout)
 
 
+datalist=torch.load('data_2.pt')
 out_channels = 2
 num_features = datalist[0].num_features
 epochs = 10
+latent_dim=out_channels*num_features
 
 loss_in = torch.nn.MSELoss()
 loss_edge = torch.nn.BCELoss()
 sigL=torch.nn.Sigmoid()
 
 model = VGAE(encoder=VariationalGCNEncoder(num_features, out_channels),decoder=DecoderMLP())  # new line
-model.load_state_dict(torch.load("./modelFN1000"))
+model.load_state_dict(torch.load("./modelFL4000"))
 # model.eval()
 write_csv('test4.txt')

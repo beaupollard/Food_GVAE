@@ -16,9 +16,11 @@ import matplotlib.pyplot as plt
 import springmassdamper as smd
 import copy
 
-BS=100
+BS=60
 percent_train=0.8
-d1=smd.run_sim()
+d1=smd.run_sim(run_nums=5)
+
+latent_multi=10.
 
 datalist=random.sample(d1,len(d1))
 length_d=int(percent_train*len(datalist))
@@ -42,8 +44,8 @@ class VariationalGCNEncoder(torch.nn.Module):
 class DecoderMLP(torch.nn.Module):
     def __init__(self):
         super(DecoderMLP, self).__init__()
-        self.mlp1=MLP([6, 8, 9],batch_norm=False)
-        self.mlp_lin=MLP([6,24,48])
+        self.mlp1=MLP([latent_dim, 8, 9],batch_norm=False)
+        self.mlp_lin=MLP([latent_dim,24,latent_dim**2+2*latent_dim])
 
 
     def forward(self,z):
@@ -56,15 +58,16 @@ from torch.utils.tensorboard import SummaryWriter
 
 out_channels = 2
 num_features = data_train.dataset[0].num_features
-epochs = 10000
+epochs = 4000
 loss_in = torch.nn.MSELoss()
+latent_dim=out_channels*num_features
 
 model = VGAE(encoder=VariationalGCNEncoder(num_features, out_channels),decoder=DecoderMLP())  # new line
-
+# model.load_state_dict(torch.load("./trained_model"))
 device = torch.device('cpu')
 
 model = model.to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 def train():
     model.train()
@@ -76,32 +79,34 @@ def train():
 
         ## Calculate z_t ##
         z = model.encode(i.x,i.edge_index)
-        xt, lin_t = model.decode(torch.reshape(z,(BS,6)))
+        xt, lin_t = model.decode(torch.reshape(z,(BS,latent_dim)))
 
         ## Form A, B and o matrices ##
-        A=torch.reshape(lin_t[:,:36],(BS,6,6))
-        B=torch.reshape(lin_t[:,36:42],(BS,6,1))
-        o=torch.reshape(lin_t[:,42:],(BS,6,1))
-
+        # A=torch.reshape(lin_t[:,:latent_dim**2],(BS,latent_dim,latent_dim))
+        # B=torch.reshape(lin_t[:,latent_dim**2:latent_dim**2+latent_dim],(BS,latent_dim,1))
+        # o=torch.reshape(lin_t[:,latent_dim**2+latent_dim:],(BS,latent_dim,1))
+        A=torch.reshape(lin_t[0,:latent_dim**2],(1,latent_dim,latent_dim))
+        B=torch.reshape(lin_t[0,latent_dim**2:latent_dim**2+latent_dim],(1,latent_dim,1))
+        o=torch.reshape(lin_t[0,latent_dim**2+latent_dim:],(1,latent_dim,1))
          ## Calcutate z_t+1_tilde ##
-        zout=torch.empty(BS,6,requires_grad=False)
-        z2=torch.reshape(z,(BS,6))
+        zout=torch.empty(BS,latent_dim,requires_grad=False)
+        z2=torch.reshape(z,(BS,latent_dim))
         for j in range(BS):
-            zout[j,:]=torch.reshape(torch.reshape(A[j,:,:]@z2[j,:],(6,1))+B[j,:]*u[j]+o[j,:],(1,6))
+            zout[j,:]=torch.reshape(torch.reshape(A[0,:,:]@z2[j,:],(latent_dim,1))+B[0,:]*u[j]+o[0,:],(1,latent_dim))
             
 
         ## Calculate z_t+1 ##
         z1 = model.encode(i.y,i.edge_index)
-        xt1, _ = model.decode(torch.reshape(z,(BS,6)))  
+        xt1, _ = model.decode(torch.reshape(z,(BS,latent_dim)))  
 
         ## Loss from z_t+1 estimate ##
-        loss = loss_in(z1.flatten(),zout.flatten())
+        loss = latent_multi*loss_in(z1.flatten(),zout.flatten())
 
         ## Loss from x_tilde ##
         loss = loss+loss_in(xt,torch.reshape(i.x,(xt.size())))
         
         ## Loss from x_tilde ##
-        loss = loss + ((1 / i.num_nodes) * model.kl_loss())/100  # new line check out Soft free bits or KL anneling
+        loss = loss + ((1 / i.num_nodes) * model.kl_loss())/50  # new line check out Soft free bits or KL anneling
         L2=L2+loss
         loss.backward()
         optimizer.step()
@@ -121,25 +126,28 @@ def test():
 
             ## Calculate z_t ##
             z = model.encode(i.x,i.edge_index)
-            xt, lin_t = model.decode(torch.reshape(z,(BS2,6)))
+            xt, lin_t = model.decode(torch.reshape(z,(BS2,latent_dim)))
 
             ## Form A, B and o matrices ##
-            A=torch.reshape(lin_t[:,:36],(BS2,6,6))
-            B=torch.reshape(lin_t[:,36:42],(BS2,6,1))
-            o=torch.reshape(lin_t[:,42:],(BS2,6,1))
+            # A=torch.reshape(lin_t[:,:latent_dim**2],(BS2,latent_dim,latent_dim))
+            # B=torch.reshape(lin_t[:,latent_dim**2:latent_dim**2+latent_dim],(BS2,latent_dim,1))
+            # o=torch.reshape(lin_t[:,latent_dim**2+latent_dim:],(BS2,latent_dim,1))
+            A=torch.reshape(lin_t[0,:latent_dim**2],(1,latent_dim,latent_dim))
+            B=torch.reshape(lin_t[0,latent_dim**2:latent_dim**2+latent_dim],(1,latent_dim,1))
+            o=torch.reshape(lin_t[0,latent_dim**2+latent_dim:],(1,latent_dim,1))
 
             ## Calcutate z_t+1_tilde ##
-            zout=torch.empty(BS2,6,requires_grad=False)
-            z2=torch.reshape(z,(BS2,6))
+            zout=torch.empty(BS2,latent_dim,requires_grad=False)
+            z2=torch.reshape(z,(BS2,latent_dim))
             for j in range(BS2):
-                zout[j,:]=torch.reshape(torch.reshape(A[j,:,:]@z2[j,:],(6,1))+B[j,:]*u[j]+o[j,:],(1,6))
+                zout[j,:]=torch.reshape(torch.reshape(A[0,:,:]@z2[j,:],(latent_dim,1))+B[0,:]*u[j]+o[0,:],(1,latent_dim))
                 
 
             ## Calculate z_t+1 ##
             z1 = model.encode(i.y,i.edge_index)
-            xt1, _ = model.decode(torch.reshape(z,(BS2,6)))  
+            xt1, _ = model.decode(torch.reshape(z,(BS2,latent_dim)))  
 
-            loss = loss+loss_in(z1.flatten(),zout.flatten())
+            loss = loss+latent_multi*loss_in(z1.flatten(),zout.flatten())
             loss = loss+loss_in(xt,torch.reshape(i.x,(xt.size())))
 
             loss = loss + ((1 / i.num_nodes) * model.kl_loss())/100  # new line                 
@@ -163,5 +171,5 @@ for epoch in range(1, epochs + 1):
     
     # writer.add_scalar('auc train',auc,epoch) # new line
     # writer.add_scalar('ap train',ap,epoch)   # new line
-fname="./modelFN"+str(epoch)
+fname="./modelFL"+str(epoch)
 torch.save(model.state_dict(), fname)
