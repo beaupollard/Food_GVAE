@@ -151,7 +151,7 @@ def write_csv(filename):
     # np.save('./O.txt',Oout)
 
 
-datalist=torch.load('data_1.pt')
+datalist=torch.load('data_2.pt')
 out_channels = 2
 num_features = datalist[0].num_features
 epochs = 10
@@ -162,6 +162,6 @@ loss_edge = torch.nn.BCELoss()
 sigL=torch.nn.Sigmoid()
 
 model = VGAE(encoder=VariationalGCNEncoder(num_features, out_channels),decoder=DecoderMLP())  # new line
-model.load_state_dict(torch.load("./modelFL4002"))
+model.load_state_dict(torch.load("./modelFL5002"))
 # model.eval()
 write_csv('test4.txt')

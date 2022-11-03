@@ -7,7 +7,7 @@ import pandas as pd
 import random
 import math
 
-def run_sim(run_nums=1):
+def run_sim(run_nums=1,out_data=1):
     ## Initialization ##
     tstart = 0
     tend = 100
@@ -118,7 +118,7 @@ def run_sim(run_nums=1):
         F=np.append(F,k[-1]*x+c[-1]*x5[i])
 
     ## Save ground truth data to text file ##
-    out_data=1
+    # out_data=1
     zout=np.zeros((len(x0),6))
     for i in range(len(x0)):
         zout[i,:]=np.array([x0[i],x1[i],x2[i],x3[i],x4[i],x5[i]])

@@ -17,9 +17,9 @@ import springmassdamper as smd
 import copy
 import time
 
-BS=30
+BS=300
 percent_train=0.9
-d1=smd.run_sim(run_nums=1)
+d1=smd.run_sim(run_nums=5,out_data=3)
 
 latent_multi=1.
 
@@ -57,12 +57,13 @@ class DecoderMLP(torch.nn.Module):
  
 
 from torch.utils.tensorboard import SummaryWriter
-device = "cpu"#torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# device = "cpu"#torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
 out_channels = 2
 num_features = data_train.dataset[0].num_features
-epochs = 4002
+epochs = 200
 loss_in = torch.nn.MSELoss()
 latent_dim=out_channels*num_features
 
@@ -71,7 +72,7 @@ model = model.to(device)
 # model.load_state_dict(torch.load("./modelFL4002"))
 # device = torch.device('cpu')
 
-learning_rate=0.005
+learning_rate=0.03
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 def train():
@@ -172,9 +173,11 @@ errors=0
 count=0
 count2=0
 t0=time.time()
+errout=[]
 for epoch in range(1, epochs + 1):
 
     loss, errors2, latent_loss, encode_loss, KL = train()
+    errout.append([latent_loss, encode_loss, KL])
     if count>10:
         errors = test()
         count=0
@@ -191,6 +194,11 @@ for epoch in range(1, epochs + 1):
     
     # writer.add_scalar('auc train',auc,epoch) # new line
     # writer.add_scalar('ap train',ap,epoch)   # new line
+fig, axs = plt.subplots(3, 1)
+axs[0].plot(latent_loss[100:],'b')
+axs[1].plot(encode_loss[100:],'r')
+axs[2].plot(KL[100:],'b')
+plt.show()
 print(time.time()-t0)
 fname="./modelFL"+str(epoch)
 torch.save(model.state_dict(), fname)
