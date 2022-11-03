@@ -162,6 +162,6 @@ loss_edge = torch.nn.BCELoss()
 sigL=torch.nn.Sigmoid()
 
 model = VGAE(encoder=VariationalGCNEncoder(num_features, out_channels),decoder=DecoderMLP())  # new line
-model.load_state_dict(torch.load("./modelFL4001"))
+model.load_state_dict(torch.load("./modelFL4002"))
 # model.eval()
 write_csv('test4.txt')

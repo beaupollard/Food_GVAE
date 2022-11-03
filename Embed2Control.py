@@ -17,8 +17,8 @@ import springmassdamper as smd
 import copy
 import time
 
-BS=45
-percent_train=0.8
+BS=30
+percent_train=0.9
 d1=smd.run_sim(run_nums=1)
 
 latent_multi=1.
@@ -62,7 +62,7 @@ print(device)
 
 out_channels = 2
 num_features = data_train.dataset[0].num_features
-epochs = 4001
+epochs = 4002
 loss_in = torch.nn.MSELoss()
 latent_dim=out_channels*num_features
 
@@ -71,7 +71,7 @@ model = model.to(device)
 # model.load_state_dict(torch.load("./modelFL4002"))
 # device = torch.device('cpu')
 
-learning_rate=0.01
+learning_rate=0.005
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 def train():
@@ -181,7 +181,7 @@ for epoch in range(1, epochs + 1):
     count=count+1
     # auc, ap = test(data.test_pos_edge_index, data.test_neg_edge_index)
     if count2==500:
-        learning_rate=learning_rate/10
+        learning_rate=learning_rate/2
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)  
         count2=0
     count2+=1
