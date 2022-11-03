@@ -29,12 +29,12 @@ def ploting(x,y):
     
     fig, axs = plt.subplots(3, 3)
     for i in range(3):
-        axs[0, i].plot(x[:,i])
-        axs[0, i].plot(y[:,i])
-        axs[1, i].plot(x[:,i+3])
-        axs[1, i].plot(y[:,i+3])
-        axs[2, i].plot(x[:,i+6])
-        axs[2, i].plot(y[:,i+6])        
+        axs[0, i].plot(x[:,i],'b')
+        axs[0, i].plot(y[:,i],'r')
+        axs[1, i].plot(x[:,i+3],'b')
+        axs[1, i].plot(y[:,i+3],'r')
+        axs[2, i].plot(x[:,i+6],'b')
+        axs[2, i].plot(y[:,i+6],'r')        
     plt.show()
 
 def ploting_latent(x,y):
@@ -115,20 +115,20 @@ def write_csv(filename):
             xout=np.vstack((xout,xt1.detach().numpy().flatten()))
             zout=np.vstack((zout,z1.detach().numpy().flatten()))
 
-    Aout=np.load('./A.npy')
-    Bout=np.load('./B.npy')
-    Oout=np.load('./O.npy')
+    # Aout=np.load('./A2.npy')
+    # Bout=np.load('./B2.npy')
+    # Oout=np.load('./O2.npy')
 
-    # Aout=np.zeros(np.size(A0[0]))
-    # Bout=np.zeros(np.size(B0[0]))
-    # Oout=np.zeros(np.size(O0[0]))
-    # for i in range(len(A0)):
-    #     Aout=Aout+A0[i]
-    #     Bout=Bout+B0[i]
-    #     Oout=Oout+O0[i]
-    # Aout=np.reshape(Aout,(latent_dim,latent_dim))/len(A0)
-    # Bout=np.reshape(Bout,(latent_dim,1))/len(A0)
-    # Oout=np.reshape(Oout,(latent_dim,1))/len(A0)
+    Aout=np.zeros(np.size(A0[0]))
+    Bout=np.zeros(np.size(B0[0]))
+    Oout=np.zeros(np.size(O0[0]))
+    for i in range(len(A0)):
+        Aout=Aout+A0[i]
+        Bout=Bout+B0[i]
+        Oout=Oout+O0[i]
+    Aout=np.reshape(Aout,(latent_dim,latent_dim))/len(A0)
+    Bout=np.reshape(Bout,(latent_dim,1))/len(A0)
+    Oout=np.reshape(Oout,(latent_dim,1))/len(A0)
     zout_tilde=[]
     for i in datalist:
         u=i.edge_attribute
@@ -137,7 +137,7 @@ def write_csv(filename):
         zout1=torch.empty(1,latent_dim,requires_grad=False)
         z2=torch.reshape(z,(latent_dim,1))
         # for j in range(1):
-        zout1=Aout@z2.detach().numpy().flatten()+(Bout)@u.detach().numpy().flatten()+np.reshape(Oout,(6,))
+        zout1=Aout@z2.detach().numpy().flatten()+(Bout)@u.detach().numpy().flatten()+np.reshape(Oout,(latent_dim,))
         if len(zout_tilde)==0:
             zout_tilde=zout1
         else:
@@ -151,7 +151,7 @@ def write_csv(filename):
     # np.save('./O.txt',Oout)
 
 
-datalist=torch.load('data_2.pt')
+datalist=torch.load('data_1.pt')
 out_channels = 2
 num_features = datalist[0].num_features
 epochs = 10
@@ -162,6 +162,6 @@ loss_edge = torch.nn.BCELoss()
 sigL=torch.nn.Sigmoid()
 
 model = VGAE(encoder=VariationalGCNEncoder(num_features, out_channels),decoder=DecoderMLP())  # new line
-model.load_state_dict(torch.load("./modelFL4000"))
+model.load_state_dict(torch.load("./modelFL4001"))
 # model.eval()
 write_csv('test4.txt')

@@ -80,20 +80,37 @@ def run_sim(run_nums=1):
         # F=np.append(F,PID(xdes,x,Fiout[i]))
 
     ## Add some artificial noise ##
-    nmax=0.0055
-    noise = np.random.normal(0, nmax, x0.shape)
-    x0 = x0 + noise
-    noise = np.random.normal(0, nmax, x0.shape)
-    x1= x1 + noise
-    noise = np.random.normal(0, nmax, x0.shape)
-    x2 = x2 + noise
-    noise = np.random.normal(0, nmax, x0.shape)
-    x3 = x3 + noise
-    noise = np.random.normal(0, nmax, x0.shape)
-    x4 = x4 + noise
-    noise = np.random.normal(0, nmax, x0.shape)
-    x5 = x5 + noise
-
+    # nmax=0.0055
+    # noise = np.random.normal(0, nmax, x0.shape)
+    # x0 = x0 + noise
+    # noise = np.random.normal(0, nmax, x0.shape)
+    # x1= x1 + noise
+    # noise = np.random.normal(0, nmax, x0.shape)
+    # x2 = x2 + noise
+    # noise = np.random.normal(0, nmax, x0.shape)
+    # x3 = x3 + noise
+    # noise = np.random.normal(0, nmax, x0.shape)
+    # x4 = x4 + noise
+    # noise = np.random.normal(0, nmax, x0.shape)
+    # x5 = x5 + noise
+    # x0=(x0+sum(x0)/len(x0))
+    # x0=x0-min(x0)
+    # x0=x0/max(x0)
+    # x1=(x1+sum(x1)/len(x0))
+    # x1=x1-min(x1)
+    # x1=x1/max(x1)
+    # x2=(x2+sum(x2)/len(x2))
+    # x2=x2-min(x2)
+    # x2=x2/max(x2)
+    # x3=(x3+sum(x3)/len(x2))
+    # x3=x3-min(x3)
+    # x3=x3/max(x3)
+    # x4=(x4+sum(x4)/len(x2))
+    # x4=x4-min(x4)
+    # x4=x4/max(x4)
+    # x5=(x5+sum(x5)/len(x2))
+    # x5=x5-min(x5)
+    # x5=x5/max(x5)
     ## Calculate the Reaction Forces ##
     F=[]
     Fi=0
@@ -101,7 +118,7 @@ def run_sim(run_nums=1):
         F=np.append(F,k[-1]*x+c[-1]*x5[i])
 
     ## Save ground truth data to text file ##
-    out_data=2
+    out_data=1
     zout=np.zeros((len(x0),6))
     for i in range(len(x0)):
         zout[i,:]=np.array([x0[i],x1[i],x2[i],x3[i],x4[i],x5[i]])

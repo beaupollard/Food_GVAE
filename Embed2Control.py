@@ -15,18 +15,20 @@ import math
 import matplotlib.pyplot as plt
 import springmassdamper as smd
 import copy
+import time
 
-BS=60
+BS=45
 percent_train=0.8
-d1=smd.run_sim(run_nums=5)
+d1=smd.run_sim(run_nums=1)
 
-latent_multi=10.
+latent_multi=1.
 
 datalist=random.sample(d1,len(d1))
 length_d=int(percent_train*len(datalist))
 data_train2=datalist[0:length_d]
 
 data_train=DataLoader(data_train2[:math.floor(length_d/BS)*BS],batch_size=BS)
+
 BS2=len(datalist[length_d:])
 data_test=DataLoader(datalist[length_d:],batch_size=BS2)
 
@@ -55,26 +57,32 @@ class DecoderMLP(torch.nn.Module):
  
 
 from torch.utils.tensorboard import SummaryWriter
+device = "cpu"#torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+print(device)
 
 out_channels = 2
 num_features = data_train.dataset[0].num_features
-epochs = 4000
+epochs = 4001
 loss_in = torch.nn.MSELoss()
 latent_dim=out_channels*num_features
 
 model = VGAE(encoder=VariationalGCNEncoder(num_features, out_channels),decoder=DecoderMLP())  # new line
-# model.load_state_dict(torch.load("./trained_model"))
-device = torch.device('cpu')
-
 model = model.to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+# model.load_state_dict(torch.load("./modelFL4002"))
+# device = torch.device('cpu')
+
+learning_rate=0.01
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 def train():
     model.train()
-
+    latent_loss=0
+    encode_loss=0
+    kl_loss=0
     L2=0
     for i in data_train:
         optimizer.zero_grad()
+        i=i.to(device)
         u=i.edge_attribute
 
         ## Calculate z_t ##
@@ -89,7 +97,7 @@ def train():
         B=torch.reshape(lin_t[0,latent_dim**2:latent_dim**2+latent_dim],(1,latent_dim,1))
         o=torch.reshape(lin_t[0,latent_dim**2+latent_dim:],(1,latent_dim,1))
          ## Calcutate z_t+1_tilde ##
-        zout=torch.empty(BS,latent_dim,requires_grad=False)
+        zout=torch.empty(BS,latent_dim,requires_grad=False).to(device)
         z2=torch.reshape(z,(BS,latent_dim))
         for j in range(BS):
             zout[j,:]=torch.reshape(torch.reshape(A[0,:,:]@z2[j,:],(latent_dim,1))+B[0,:]*u[j]+o[0,:],(1,latent_dim))
@@ -98,6 +106,7 @@ def train():
         ## Calculate z_t+1 ##
         z1 = model.encode(i.y,i.edge_index)
         xt1, _ = model.decode(torch.reshape(z,(BS,latent_dim)))  
+        
 
         ## Loss from z_t+1 estimate ##
         loss = latent_multi*loss_in(z1.flatten(),zout.flatten())
@@ -110,9 +119,12 @@ def train():
         L2=L2+loss
         loss.backward()
         optimizer.step()
+        latent_loss+=latent_multi*loss_in(z1.flatten(),zout.flatten())
+        encode_loss+=loss_in(xt,torch.reshape(i.x,(xt.size())))
+        kl_loss+=((1 / i.num_nodes) * model.kl_loss())/50
     # print(L2)
 
-    return float(loss), L2
+    return float(loss), 1000*L2, 1000*latent_loss, 1000*encode_loss, 1000*kl_loss
 
 
 def test():
@@ -122,6 +134,7 @@ def test():
 
         for i in data_test:
             optimizer.zero_grad()
+            i=i.to(device)
             u=i.edge_attribute
 
             ## Calculate z_t ##
@@ -137,7 +150,7 @@ def test():
             o=torch.reshape(lin_t[0,latent_dim**2+latent_dim:],(1,latent_dim,1))
 
             ## Calcutate z_t+1_tilde ##
-            zout=torch.empty(BS2,latent_dim,requires_grad=False)
+            zout=torch.empty(BS2,latent_dim,requires_grad=False).to(device)
             z2=torch.reshape(z,(BS2,latent_dim))
             for j in range(BS2):
                 zout[j,:]=torch.reshape(torch.reshape(A[0,:,:]@z2[j,:],(latent_dim,1))+B[0,:]*u[j]+o[0,:],(1,latent_dim))
@@ -157,19 +170,27 @@ def test():
 writer = SummaryWriter('runs/VGAE_experiment_'+'2d_20_epochs')
 errors=0
 count=0
+count2=0
+t0=time.time()
 for epoch in range(1, epochs + 1):
 
-    loss, errors2 = train()
+    loss, errors2, latent_loss, encode_loss, KL = train()
     if count>10:
         errors = test()
         count=0
     count=count+1
     # auc, ap = test(data.test_pos_edge_index, data.test_neg_edge_index)
+    if count2==500:
+        learning_rate=learning_rate/10
+        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)  
+        count2=0
+    count2+=1
 
-    print('Epoch: {:03d}, Train: {:.4f}, Test: {:.4f}'.format(epoch, errors2, errors))
+    print('Epoch: {:03d}, Train: {:.4f}, Test: {:.4f}, Latent: {:.4f}, Encode: {:.4f}, KL: {:.4f}'.format(epoch, errors2, errors, latent_loss, encode_loss, KL))
     
     
     # writer.add_scalar('auc train',auc,epoch) # new line
     # writer.add_scalar('ap train',ap,epoch)   # new line
+print(time.time()-t0)
 fname="./modelFL"+str(epoch)
 torch.save(model.state_dict(), fname)
