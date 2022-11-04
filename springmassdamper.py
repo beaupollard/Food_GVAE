@@ -7,7 +7,7 @@ import pandas as pd
 import random
 import math
 
-def run_sim(run_nums=1,out_data=1):
+def run_sim(run_nums=1,out_data=1,num_repeats=4):
     ## Initialization ##
     tstart = 0
     tend = 100
@@ -49,27 +49,31 @@ def run_sim(run_nums=1,out_data=1):
         m=[abs(random.gauss(30.,10.)),abs(random.gauss(30.,10.)),abs(random.gauss(30.,10.))]
         c=[abs(random.gauss(10.,5.)),abs(random.gauss(10.,5.)),abs(random.gauss(10.,5.))]
         # x_int=[0.,random.gauss(0.,0.25),0.,random.gauss(0.,0.25),0.,random.gauss(0.,0.25)]
-        x_int=[0.,0.,0.,0.,0.,0.]
+        # x_int=[0.,0.,0.,0.,0.,0.]
         omega_des=math.pi/random.gauss(2.,0.5)#0.25*(k[0]/m[0])**0.5
         xd_prev=[]
-        for i in range(0,len(t),int_t):
-            
-            tin=t[i:i+int_t+1]
-            xdes=x_int[0]+0.1*math.sin(omega_des*tin[-1])
-            xd_prev.append(xdes)
-            Fiout = np.append(Fiout,np.ones(len(tin,)-1))
-            x = odeint(mydiff, x_int, tin,args=(m,k,c,xdes,Fi))
-            Fi=(x[-1,0]-xdes)+Fi
+        for h in range(num_repeats):
+            x_int=[random.gauss(0.,0.1),random.gauss(0.,0.25),random.gauss(0.,0.1),random.gauss(0.,0.25),random.gauss(0.,0.1),random.gauss(0.,0.25)]
+            # x_int=[0.,random.gauss(0.,0.25),0.,random.gauss(0.,0.25),0.,random.gauss(0.,0.25)]
+            for i in range(0,len(t),int_t):
+                
+               
+                tin=t[i:i+int_t+1]
+                xdes=0.1*math.sin(omega_des*tin[-1])
+                xd_prev.append(xdes)
+                Fiout = np.append(Fiout,np.ones(len(tin,)-1))
+                x = odeint(mydiff, x_int, tin,args=(m,k,c,xdes,Fi))
+                Fi=(x[-1,0]-xdes)+Fi
 
-            count=count*-1
-            x0=np.append(x0,x[:-1,0])
-            x1=np.append(x1,x[:-1,1])
-            x2=np.append(x2,x[:-1,2])
-            x3=np.append(x3,x[:-1,3])
-            x4=np.append(x4,x[:-1,4])
-            x5=np.append(x5,x[:-1,5])
+                count=count*-1
+                x0=np.append(x0,x[:-1,0])
+                x1=np.append(x1,x[:-1,1])
+                x2=np.append(x2,x[:-1,2])
+                x3=np.append(x3,x[:-1,3])
+                x4=np.append(x4,x[:-1,4])
+                x5=np.append(x5,x[:-1,5])
 
-            x_int=x[-1,:]
+                x_int=x[-1,:]
 
 
     # ## Recalculate the Forces ##
@@ -154,4 +158,4 @@ def run_sim(run_nums=1,out_data=1):
     torch.save(data,os.path.join('./',f'data_{out_data}.pt'))
     return data
 
-run_sim(run_nums=1)
+# run_sim(run_nums=1)

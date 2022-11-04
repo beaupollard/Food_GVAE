@@ -11,6 +11,7 @@ from torch_geometric.nn import VGAE, MLP
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal
+import copy
 
 def apply_filter(xin,N=4,fc=5,dt=0.1):
     fs=1/dt
@@ -70,6 +71,18 @@ class DecoderMLP(torch.nn.Module):
         x= self.mlp1(z)
         lin=self.mlp_lin(z)
         return x, lin
+
+def roll_forward(A,B,O,x,edge,u):
+    model.eval()
+    z0 = model.encode(x,edge)
+    xout=np.empty((len(u),9))
+
+    for i in range(1,len(u)):
+        zout=torch.tensor(A@z0.detach().numpy().flatten()+(B*u[i]).flatten()+O.flatten()).reshape((3,4))
+        xt, lin_t = model.decode(torch.reshape(zout.to(torch.float),(1,latent_dim)))
+        xout[i,:]=xt.detach().numpy().flatten()
+        z0=copy.deepcopy(zout)
+    return xout
 
 def write_csv(filename):
     model.eval()
@@ -143,16 +156,23 @@ def write_csv(filename):
         else:
             zout_tilde=np.vstack((zout_tilde,zout1))
     # apply_filter(zout)
-    ploting_latent(apply_filter(zout,N=5,fc=1.5),apply_filter(zout_tilde,N=5,fc=1.5))
+    # ploting_latent(apply_filter(zout,N=5,fc=1.5),apply_filter(zout_tilde,N=5,fc=1.5))
     # ploting_latent(zout,zout_tilde)
+    x=np.empty((len(datalist),9))
+    u=np.empty((len(datalist),1))
+    for i, data in enumerate(datalist):
+        x[i,:]=data.x.detach().numpy().flatten()
+        u[i,0]=data.edge_attribute.detach().numpy()
+        
+    xout_tilde=roll_forward(Aout,Bout,Oout,datalist[1].x,datalist[0].edge_index,u[1:1000])
     print("hey")
     # np.save('./A.txt',Aout)
     # np.save('./B.txt',Bout)
     # np.save('./O.txt',Oout)
 
 
-datalist=torch.load('data_2.pt')
-out_channels = 2
+datalist=torch.load('data_3.pt')
+out_channels = 4
 num_features = datalist[0].num_features
 epochs = 10
 latent_dim=out_channels*num_features
@@ -162,6 +182,6 @@ loss_edge = torch.nn.BCELoss()
 sigL=torch.nn.Sigmoid()
 
 model = VGAE(encoder=VariationalGCNEncoder(num_features, out_channels),decoder=DecoderMLP())  # new line
-model.load_state_dict(torch.load("./modelFL5002"))
+model.load_state_dict(torch.load("./modelFL3543"))
 # model.eval()
 write_csv('test4.txt')

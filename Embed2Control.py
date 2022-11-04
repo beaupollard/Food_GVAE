@@ -17,9 +17,9 @@ import springmassdamper as smd
 import copy
 import time
 
-BS=300
+BS=512
 percent_train=0.9
-d1=smd.run_sim(run_nums=5,out_data=3)
+d1=smd.run_sim(run_nums=1,out_data=5,num_repeats=10)
 
 latent_multi=1.
 
@@ -57,22 +57,22 @@ class DecoderMLP(torch.nn.Module):
  
 
 from torch.utils.tensorboard import SummaryWriter
-# device = "cpu"#torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = "cpu"#torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
-out_channels = 2
+out_channels = 4
 num_features = data_train.dataset[0].num_features
-epochs = 200
+epochs = 4005
 loss_in = torch.nn.MSELoss()
 latent_dim=out_channels*num_features
 
 model = VGAE(encoder=VariationalGCNEncoder(num_features, out_channels),decoder=DecoderMLP())  # new line
 model = model.to(device)
-# model.load_state_dict(torch.load("./modelFL4002"))
+model.load_state_dict(torch.load("./modelFL611"))
 # device = torch.device('cpu')
 
-learning_rate=0.03
+learning_rate=0.0025
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 def train():
@@ -125,7 +125,7 @@ def train():
         kl_loss+=((1 / i.num_nodes) * model.kl_loss())/50
     # print(L2)
 
-    return float(loss), 1000*L2, 1000*latent_loss, 1000*encode_loss, 1000*kl_loss
+    return float(loss), 1000*L2.cpu().detach().numpy(), 1000*latent_loss.cpu().detach().numpy(), 1000*encode_loss.cpu().detach().numpy(), 1000*kl_loss.cpu().detach().numpy()
 
 
 def test():
@@ -184,7 +184,7 @@ for epoch in range(1, epochs + 1):
     count=count+1
     # auc, ap = test(data.test_pos_edge_index, data.test_neg_edge_index)
     if count2==500:
-        learning_rate=learning_rate/2
+        learning_rate=learning_rate/4
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)  
         count2=0
     count2+=1
@@ -194,11 +194,11 @@ for epoch in range(1, epochs + 1):
     
     # writer.add_scalar('auc train',auc,epoch) # new line
     # writer.add_scalar('ap train',ap,epoch)   # new line
-fig, axs = plt.subplots(3, 1)
-axs[0].plot(latent_loss[100:],'b')
-axs[1].plot(encode_loss[100:],'r')
-axs[2].plot(KL[100:],'b')
-plt.show()
+# fig, axs = plt.subplots(3, 1)
+# axs[0].plot(latent_loss[100:],'b')
+# axs[1].plot(encode_loss[100:],'r')
+# axs[2].plot(KL[100:],'b')
+# plt.show()
 print(time.time()-t0)
 fname="./modelFL"+str(epoch)
 torch.save(model.state_dict(), fname)
