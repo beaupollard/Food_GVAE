@@ -7,7 +7,7 @@ import pandas as pd
 import random
 import math
 
-def run_sim(run_nums=1,out_data=1,num_repeats=4):
+def run_sim(run_nums=1,out_data=1,num_repeats=1):
     ## Initialization ##
     tstart = 0
     tend = 100
@@ -158,4 +158,4 @@ def run_sim(run_nums=1,out_data=1,num_repeats=4):
     torch.save(data,os.path.join('./',f'data_{out_data}.pt'))
     return data
 
-# run_sim(run_nums=1)
+run_sim(run_nums=1)

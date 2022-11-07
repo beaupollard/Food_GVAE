@@ -38,6 +38,18 @@ def ploting(x,y):
         axs[2, i].plot(y[:,i+6],'r')        
     plt.show()
 
+def plot_pos(x,y,index=[0,3,6]):
+    plt.rcParams.update({'font.size': 25})
+    fig, axs = plt.subplots(3, 1)
+    time=np.linspace(0,len(x[:,0])*0.1,len(x[:,0]))
+    for i, ind in enumerate(index):
+        axs[i].plot(time[:],x[:,ind],'b',linewidth=3)
+        axs[i].plot(time[:],y[:,ind],'r',linewidth=3)
+        
+        axs[i].set_ylabel('Position (m)')
+    axs[-1].set_xlabel('Time (s)')     
+    plt.show()
+
 def ploting_latent(x,y):
     
     fig, axs = plt.subplots(2, 3)
@@ -128,20 +140,20 @@ def write_csv(filename):
             xout=np.vstack((xout,xt1.detach().numpy().flatten()))
             zout=np.vstack((zout,z1.detach().numpy().flatten()))
 
-    # Aout=np.load('./A2.npy')
-    # Bout=np.load('./B2.npy')
-    # Oout=np.load('./O2.npy')
+    Aout=np.load('./A3.npy')
+    Bout=np.load('./B3.npy')
+    Oout=np.load('./O3.npy')
 
-    Aout=np.zeros(np.size(A0[0]))
-    Bout=np.zeros(np.size(B0[0]))
-    Oout=np.zeros(np.size(O0[0]))
-    for i in range(len(A0)):
-        Aout=Aout+A0[i]
-        Bout=Bout+B0[i]
-        Oout=Oout+O0[i]
-    Aout=np.reshape(Aout,(latent_dim,latent_dim))/len(A0)
-    Bout=np.reshape(Bout,(latent_dim,1))/len(A0)
-    Oout=np.reshape(Oout,(latent_dim,1))/len(A0)
+    # Aout=np.zeros(np.size(A0[0]))
+    # Bout=np.zeros(np.size(B0[0]))
+    # Oout=np.zeros(np.size(O0[0]))
+    # for i in range(len(A0)):
+    #     Aout=Aout+A0[i]
+    #     Bout=Bout+B0[i]
+    #     Oout=Oout+O0[i]
+    # Aout=np.reshape(Aout,(latent_dim,latent_dim))/len(A0)
+    # Bout=np.reshape(Bout,(latent_dim,1))/len(A0)
+    # Oout=np.reshape(Oout,(latent_dim,1))/len(A0)
     zout_tilde=[]
     for i in datalist:
         u=i.edge_attribute
@@ -164,14 +176,14 @@ def write_csv(filename):
         x[i,:]=data.x.detach().numpy().flatten()
         u[i,0]=data.edge_attribute.detach().numpy()
         
-    xout_tilde=roll_forward(Aout,Bout,Oout,datalist[1].x,datalist[0].edge_index,u[1:1000])
+    xout_tilde=roll_forward(Aout,Bout,Oout,datalist[1].x,datalist[0].edge_index,u[:])
     print("hey")
-    # np.save('./A.txt',Aout)
-    # np.save('./B.txt',Bout)
-    # np.save('./O.txt',Oout)
+    # np.save('./A3',Aout)
+    # np.save('./B3',Bout)
+    # np.save('./O3',Oout)
 
 
-datalist=torch.load('data_3.pt')
+datalist=torch.load('data_1.pt')
 out_channels = 4
 num_features = datalist[0].num_features
 epochs = 10
@@ -182,6 +194,6 @@ loss_edge = torch.nn.BCELoss()
 sigL=torch.nn.Sigmoid()
 
 model = VGAE(encoder=VariationalGCNEncoder(num_features, out_channels),decoder=DecoderMLP())  # new line
-model.load_state_dict(torch.load("./modelFL3543"))
+model.load_state_dict(torch.load("./modelFL4000"))
 # model.eval()
 write_csv('test4.txt')

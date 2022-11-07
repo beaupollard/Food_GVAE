@@ -17,17 +17,17 @@ import springmassdamper as smd
 import copy
 import time
 
-BS=512
+BS=2048
 percent_train=0.9
-d1=smd.run_sim(run_nums=1,out_data=5,num_repeats=10)
-
+# d1=smd.run_sim(run_nums=5,out_data=5,num_repeats=10)
+d1=datalist=torch.load('data_5.pt')
 latent_multi=1.
 
 datalist=random.sample(d1,len(d1))
 length_d=int(percent_train*len(datalist))
 data_train2=datalist[0:length_d]
 
-data_train=DataLoader(data_train2[:math.floor(length_d/BS)*BS],batch_size=BS)
+data_train=DataLoader(data_train2[:math.floor(length_d/BS)*BS],batch_size=BS,shuffle=True)
 
 BS2=len(datalist[length_d:])
 data_test=DataLoader(datalist[length_d:],batch_size=BS2)
@@ -63,16 +63,16 @@ print(device)
 
 out_channels = 4
 num_features = data_train.dataset[0].num_features
-epochs = 4005
+epochs = 4000
 loss_in = torch.nn.MSELoss()
 latent_dim=out_channels*num_features
 
 model = VGAE(encoder=VariationalGCNEncoder(num_features, out_channels),decoder=DecoderMLP())  # new line
 model = model.to(device)
-model.load_state_dict(torch.load("./modelFL611"))
+model.load_state_dict(torch.load("./modelFLBS2048"))
 # device = torch.device('cpu')
 
-learning_rate=0.0025
+learning_rate=0.0001 #was 0.001 to start training
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 def train():
@@ -186,6 +186,8 @@ for epoch in range(1, epochs + 1):
     if count2==500:
         learning_rate=learning_rate/4
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)  
+        fname="./modelFL"+str(epoch)
+        torch.save(model.state_dict(), fname)
         count2=0
     count2+=1
 
