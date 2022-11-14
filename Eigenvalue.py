@@ -39,6 +39,7 @@ def ploting(x,y):
     plt.show()
 
 def plot_pos(x,y,index=[0,3,6]):
+    ylabels=['M1 Position','M2 Position','M3 Position']
     plt.rcParams.update({'font.size': 25})
     fig, axs = plt.subplots(3, 1)
     time=np.linspace(0,len(x[:,0])*0.1,len(x[:,0]))
@@ -46,7 +47,7 @@ def plot_pos(x,y,index=[0,3,6]):
         axs[i].plot(time[:],x[:,ind],'b',linewidth=3)
         axs[i].plot(time[:],y[:,ind],'r',linewidth=3)
         
-        axs[i].set_ylabel('Position (m)')
+        axs[i].set_ylabel(ylabels[i])
     axs[-1].set_xlabel('Time (s)')     
     plt.show()
 
@@ -105,40 +106,44 @@ def write_csv(filename):
     B0=[]
     O0=[]
     for i in datalist:
-        u=i.edge_attribute
+        if len(xout)==0:
+            xout=i.x.detach().numpy().flatten()
+        else:
+            xout=np.vstack((xout,i.x.detach().numpy().flatten()))
+        # u=i.edge_attribute
 
-        ## Calculate z_t ##
-        z = model.encode(i.x,i.edge_index)
-        xt, lin_t = model.decode(torch.reshape(z,(1,latent_dim)))
+        # ## Calculate z_t ##
+        # z = model.encode(i.x,i.edge_index)
+        # xt, lin_t = model.decode(torch.reshape(z,(1,latent_dim)))
 
-        ## Form A, B and o matrices ##
-        A=torch.reshape(lin_t[0,:latent_dim**2],(1,latent_dim,latent_dim))
-        B=torch.reshape(lin_t[0,latent_dim**2:latent_dim**2+latent_dim],(1,latent_dim,1))
-        o=torch.reshape(lin_t[0,latent_dim**2+latent_dim:],(1,latent_dim,1))
-        # A0.append(np.linalg.eig(np.reshape(A.detach().numpy(),(latent_dim,latent_dim))))
-        A0.append((np.reshape(A.detach().numpy(),(1,latent_dim*latent_dim))))
-        B0.append((np.reshape(B.detach().numpy(),(1,latent_dim))))
-        O0.append((np.reshape(o.detach().numpy(),(1,latent_dim))))
+        # ## Form A, B and o matrices ##
+        # A=torch.reshape(lin_t[0,:latent_dim**2],(1,latent_dim,latent_dim))
+        # B=torch.reshape(lin_t[0,latent_dim**2:latent_dim**2+latent_dim],(1,latent_dim,1))
+        # o=torch.reshape(lin_t[0,latent_dim**2+latent_dim:],(1,latent_dim,1))
+        # # A0.append(np.linalg.eig(np.reshape(A.detach().numpy(),(latent_dim,latent_dim))))
+        # A0.append((np.reshape(A.detach().numpy(),(1,latent_dim*latent_dim))))
+        # B0.append((np.reshape(B.detach().numpy(),(1,latent_dim))))
+        # O0.append((np.reshape(o.detach().numpy(),(1,latent_dim))))
 
-        ## Calcutate z_t+1_tilde ##
-        zout1=torch.empty(1,latent_dim,requires_grad=False)
-        z2=torch.reshape(z,(latent_dim,1))
-        for j in range(1):
-            zout1[j,:]=torch.reshape(torch.reshape(A[j,:,:]@z2[:,0],(latent_dim,1))+B[j,:]*u[j]+o[j,:],(1,latent_dim))
+        # ## Calcutate z_t+1_tilde ##
+        # zout1=torch.empty(1,latent_dim,requires_grad=False)
+        # z2=torch.reshape(z,(latent_dim,1))
+        # for j in range(1):
+        #     zout1[j,:]=torch.reshape(torch.reshape(A[j,:,:]@z2[:,0],(latent_dim,1))+B[j,:]*u[j]+o[j,:],(1,latent_dim))
             
 
-        ## Calculate z_t+1 ##
-        z1 = model.encode(i.y,i.edge_index)
-        xt1, _ = model.decode(torch.reshape(z1,(1,latent_dim)))  
-        if len(xout)==0:
-            xout=xt1.detach().numpy().flatten()
-            yout=i.y.detach().numpy().flatten()
-            zout=z1.detach().numpy().flatten()
-            # zout=zout1.detach().numpy().flatten()
-        else:
-            yout=np.vstack((yout,i.y.detach().numpy().flatten()))
-            xout=np.vstack((xout,xt1.detach().numpy().flatten()))
-            zout=np.vstack((zout,z1.detach().numpy().flatten()))
+        # ## Calculate z_t+1 ##
+        # z1 = model.encode(i.y,i.edge_index)
+        # xt1, _ = model.decode(torch.reshape(z1,(1,latent_dim)))  
+        # if len(xout)==0:
+        #     xout=xt1.detach().numpy().flatten()
+        #     yout=i.y.detach().numpy().flatten()
+        #     zout=z1.detach().numpy().flatten()
+        #     # zout=zout1.detach().numpy().flatten()
+        # else:
+        #     yout=np.vstack((yout,i.y.detach().numpy().flatten()))
+        #     xout=np.vstack((xout,xt1.detach().numpy().flatten()))
+        #     zout=np.vstack((zout,z1.detach().numpy().flatten()))
 
     Aout=np.load('./A3.npy')
     Bout=np.load('./B3.npy')
@@ -154,19 +159,21 @@ def write_csv(filename):
     # Aout=np.reshape(Aout,(latent_dim,latent_dim))/len(A0)
     # Bout=np.reshape(Bout,(latent_dim,1))/len(A0)
     # Oout=np.reshape(Oout,(latent_dim,1))/len(A0)
-    zout_tilde=[]
-    for i in datalist:
-        u=i.edge_attribute
-        z = model.encode(i.x,i.edge_index)
-        ## Calcutate z_t+1_tilde ##
-        zout1=torch.empty(1,latent_dim,requires_grad=False)
-        z2=torch.reshape(z,(latent_dim,1))
-        # for j in range(1):
-        zout1=Aout@z2.detach().numpy().flatten()+(Bout)@u.detach().numpy().flatten()+np.reshape(Oout,(latent_dim,))
-        if len(zout_tilde)==0:
-            zout_tilde=zout1
-        else:
-            zout_tilde=np.vstack((zout_tilde,zout1))
+    # zout_tilde=[]
+    # for i in datalist:
+    #     u=i.edge_attribute
+    #     z = model.encode(i.x,i.edge_index)
+    #     ## Calcutate z_t+1_tilde ##
+    #     zout1=torch.empty(1,latent_dim,requires_grad=False)
+    #     z2=torch.reshape(z,(latent_dim,1))
+    #     # for j in range(1):
+    #     zout1=Aout@z2.detach().numpy().flatten()+(Bout)@u.detach().numpy().flatten()+np.reshape(Oout,(latent_dim,))
+    #     if len(zout_tilde)==0:
+    #         zout_tilde=zout1
+    #     else:
+    #         zout_tilde=np.vstack((zout_tilde,zout1))
+
+
     # apply_filter(zout)
     # ploting_latent(apply_filter(zout,N=5,fc=1.5),apply_filter(zout_tilde,N=5,fc=1.5))
     # ploting_latent(zout,zout_tilde)
@@ -176,14 +183,14 @@ def write_csv(filename):
         x[i,:]=data.x.detach().numpy().flatten()
         u[i,0]=data.edge_attribute.detach().numpy()
         
-    xout_tilde=roll_forward(Aout,Bout,Oout,datalist[1].x,datalist[0].edge_index,u[:])
+    xout_tilde=roll_forward(Aout,Bout,Oout,datalist[0].x,datalist[0].edge_index,u[:])
     print("hey")
     # np.save('./A3',Aout)
     # np.save('./B3',Bout)
     # np.save('./O3',Oout)
 
 
-datalist=torch.load('data_1.pt')
+datalist=torch.load('data_5.pt')
 out_channels = 4
 num_features = datalist[0].num_features
 epochs = 10

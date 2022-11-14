@@ -17,10 +17,10 @@ import springmassdamper as smd
 import copy
 import time
 
-BS=2048
-percent_train=0.9
-# d1=smd.run_sim(run_nums=5,out_data=5,num_repeats=10)
-d1=datalist=torch.load('data_5.pt')
+BS=1
+percent_train=0.8
+d1=smd.run_sim(run_nums=1,out_data=1,num_repeats=1)
+# d1=datalist=torch.load('data_5.pt')
 latent_multi=1.
 
 datalist=random.sample(d1,len(d1))
@@ -69,7 +69,7 @@ latent_dim=out_channels*num_features
 
 model = VGAE(encoder=VariationalGCNEncoder(num_features, out_channels),decoder=DecoderMLP())  # new line
 model = model.to(device)
-model.load_state_dict(torch.load("./modelFLBS2048"))
+# model.load_state_dict(torch.load("./modelFLBS2048"))
 # device = torch.device('cpu')
 
 learning_rate=0.0001 #was 0.001 to start training
