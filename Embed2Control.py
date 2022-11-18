@@ -13,11 +13,11 @@ import numpy as np
 import random
 import math
 import matplotlib.pyplot as plt
-import springmassdamper as smd
+import springmassdamper_graph as smd
 import copy
 import time
 
-BS=1
+BS=128
 percent_train=0.8
 d1=smd.run_sim(run_nums=1,out_data=1,num_repeats=1)
 # d1=datalist=torch.load('data_5.pt')
@@ -47,7 +47,7 @@ class DecoderMLP(torch.nn.Module):
     def __init__(self):
         super(DecoderMLP, self).__init__()
         self.mlp1=MLP([latent_dim, 8, 9],batch_norm=False)
-        self.mlp_lin=MLP([latent_dim,24,latent_dim**2+2*latent_dim])
+        self.mlp_lin=MLP([latent_dim,24,latent_dim**2])
 
 
     def forward(self,z):
@@ -61,11 +61,11 @@ device = "cpu"#torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
-out_channels = 4
+out_channels = 2
 num_features = data_train.dataset[0].num_features
 epochs = 4000
 loss_in = torch.nn.MSELoss()
-latent_dim=out_channels*num_features
+latent_dim=4#out_channels*num_features
 
 model = VGAE(encoder=VariationalGCNEncoder(num_features, out_channels),decoder=DecoderMLP())  # new line
 model = model.to(device)
@@ -84,7 +84,7 @@ def train():
     for i in data_train:
         optimizer.zero_grad()
         i=i.to(device)
-        u=i.edge_attribute
+        # u=i.edge_attribute
 
         ## Calculate z_t ##
         z = model.encode(i.x,i.edge_index)
@@ -95,13 +95,13 @@ def train():
         # B=torch.reshape(lin_t[:,latent_dim**2:latent_dim**2+latent_dim],(BS,latent_dim,1))
         # o=torch.reshape(lin_t[:,latent_dim**2+latent_dim:],(BS,latent_dim,1))
         A=torch.reshape(lin_t[0,:latent_dim**2],(1,latent_dim,latent_dim))
-        B=torch.reshape(lin_t[0,latent_dim**2:latent_dim**2+latent_dim],(1,latent_dim,1))
-        o=torch.reshape(lin_t[0,latent_dim**2+latent_dim:],(1,latent_dim,1))
+        # B=torch.reshape(lin_t[0,latent_dim**2:latent_dim**2+latent_dim],(1,latent_dim,1))
+        # o=torch.reshape(lin_t[0,latent_dim**2+latent_dim:],(1,latent_dim,1))
          ## Calcutate z_t+1_tilde ##
         zout=torch.empty(BS,latent_dim,requires_grad=False).to(device)
         z2=torch.reshape(z,(BS,latent_dim))
         for j in range(BS):
-            zout[j,:]=torch.reshape(torch.reshape(A[0,:,:]@z2[j,:],(latent_dim,1))+B[0,:]*u[j]+o[0,:],(1,latent_dim))
+            zout[j,:]=(torch.reshape(A[0,:,:]@z2[j,:],(latent_dim,1))).flatten()
             
 
         ## Calculate z_t+1 ##
@@ -136,7 +136,7 @@ def test():
         for i in data_test:
             optimizer.zero_grad()
             i=i.to(device)
-            u=i.edge_attribute
+            # u=i.edge_attribute
 
             ## Calculate z_t ##
             z = model.encode(i.x,i.edge_index)
@@ -147,14 +147,14 @@ def test():
             # B=torch.reshape(lin_t[:,latent_dim**2:latent_dim**2+latent_dim],(BS2,latent_dim,1))
             # o=torch.reshape(lin_t[:,latent_dim**2+latent_dim:],(BS2,latent_dim,1))
             A=torch.reshape(lin_t[0,:latent_dim**2],(1,latent_dim,latent_dim))
-            B=torch.reshape(lin_t[0,latent_dim**2:latent_dim**2+latent_dim],(1,latent_dim,1))
-            o=torch.reshape(lin_t[0,latent_dim**2+latent_dim:],(1,latent_dim,1))
+            # B=torch.reshape(lin_t[0,latent_dim**2:latent_dim**2+latent_dim],(1,latent_dim,1))
+            # o=torch.reshape(lin_t[0,latent_dim**2+latent_dim:],(1,latent_dim,1))
 
             ## Calcutate z_t+1_tilde ##
             zout=torch.empty(BS2,latent_dim,requires_grad=False).to(device)
             z2=torch.reshape(z,(BS2,latent_dim))
             for j in range(BS2):
-                zout[j,:]=torch.reshape(torch.reshape(A[0,:,:]@z2[j,:],(latent_dim,1))+B[0,:]*u[j]+o[0,:],(1,latent_dim))
+                zout[j,:]=torch.reshape(torch.reshape(A[0,:,:]@z2[j,:],(latent_dim,1)))
                 
 
             ## Calculate z_t+1 ##

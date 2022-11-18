@@ -1,117 +1,160 @@
+from torch import nn
+import torch.nn.functional as F
 import torch
-from torch_geometric.datasets import Planetoid
-from torch_geometric.data import Dataset, Data
-from torch_geometric.loader import DataLoader
-import torch_geometric.transforms as T
-from torch_geometric.nn import GCNConv
-from torch_geometric.utils import train_test_split_edges
-import pandas as pd
-import os
-from torch_geometric.nn import VGAE, MLP, ECConv
-import numpy as np
-import random
-import math
-import matplotlib.pyplot as plt
-import springmassdamper as smd
+
+class VAE(nn.Module):
+    def __init__(self, enc_out_dim=3, latent_dim=2, input_height=3,lr=1e-3,hidden_layers=64):
+        super(VAE, self).__init__()
+        self.lr=lr
+        self.count=0
+        self.kl_weight=0.5
+        self.flatten = nn.Flatten()
+        self.latent_dim=latent_dim
+        self.linear_relu_stack = nn.Sequential(
+            nn.Linear(input_height, hidden_layers),
+            nn.ReLU(),
+        )
+        self.linear_mu = nn.Sequential(
+            nn.Linear(hidden_layers, latent_dim),
+            # nn.Tanh()
+        )
+        self.linear_logstd = nn.Sequential(
+            nn.Linear(hidden_layers, latent_dim),
+            # nn.Tanh()
+        )
+
+        self.decoder0 = nn.Sequential(
+            nn.Linear(latent_dim, hidden_layers),
+            nn.Tanh(),#nn.ReLU(),
+            nn.Linear(hidden_layers, enc_out_dim),
+        )
+        self.decoder1= nn.Sequential(
+            nn.Linear(latent_dim, latent_dim**2+latent_dim),
+            # nn.Tanh(),#ReLU(),
+        )
+
+        # for the gaussian likelihood
+        self.log_scale = nn.Parameter(torch.Tensor([0.0]))
+        self.optimizer=self.configure_optimizers(lr=lr)
+
+    def reparametrize(self,mu,logstd):
+        if self.training:
+            return mu+torch.randn_like(logstd)*torch.exp(logstd)
+        else:
+            return mu
+
+    def forward(self, x):
+        # x = self.flatten(x)
+        logits = self.linear_relu_stack(x)
+        mu = self.linear_mu(logits)
+        logstd = torch.exp(self.linear_logstd(logits)/2)
+        # z = self.reparametrize(mu,logstd)
+        return logits, mu, logstd
+
+    def decoder(self,z):
+        xhat= self.decoder0(z)
+        lin=self.decoder1(z)
+        A=torch.reshape(lin.mean(dim=0)[:self.latent_dim**2],(self.latent_dim,self.latent_dim))
+        B=torch.reshape(lin.mean(dim=0)[self.latent_dim**2:self.latent_dim**2+self.latent_dim],(self.latent_dim,))        
+        # A=torch.reshape(lin[:self.latent_dim**2,0],(self.latent_dim,self.latent_dim))
+        # B=torch.reshape(lin[self.latent_dim**2:self.latent_dim**2+self.latent_dim,0],(self.latent_dim,))
+        return xhat, A, B
 
 
-BS=24
-d1=smd.run_sim()
-d2=d1
-datalist=random.sample(d2,len(d2))
-length_d=round(4*len(datalist)/4)
-data_train=datalist[0:length_d]
-data_test=d2[0:length_d]
-data_train2=DataLoader(data_train[:math.floor(len(data_train)/BS)*BS],batch_size=BS)
+    def configure_optimizers(self,lr=1e-4):
+        return torch.optim.Adam(self.parameters(), lr=lr)
 
-class VariationalGCNEncoder(torch.nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(VariationalGCNEncoder, self).__init__()
-        self.conv1 = GCNConv(in_channels, 2 * out_channels, cached=False) # cached only for transductive learning
-        self.conv_mu = GCNConv(2 * out_channels, out_channels, cached=False)
-        self.conv_logstd = GCNConv(2 * out_channels, out_channels, cached=False)        
+    def gaussian_likelihood(self, x_hat, logscale, x):
+        scale = torch.exp(logscale)
+        mean = x_hat
+        dist = torch.distributions.Normal(mean, scale)
 
-    def forward(self, x, edge_index):     
-        x = self.conv1(x, edge_index).relu()
-        return self.conv_mu(x, edge_index), self.conv_logstd(x, edge_index)
+        # measure prob of seeing image under p(x|z)
+        log_pxz = dist.log_prob(x)
+        return log_pxz.sum(dim=(1))
 
-## This decoder takes us from latent space back to physical scene ##
-class DecoderMLP(torch.nn.Module):
-    def __init__(self):
-        super(DecoderMLP, self).__init__()
-        self.mlp1=MLP([6, 8, 9],batch_norm=False)
+    def kl_divergence(self, z, mu, std):
+        # --------------------------
+        # Monte carlo KL divergence
+        # --------------------------
+        # 1. define the first two probabilities (in this case Normal for both)
+        p = torch.distributions.Normal(torch.zeros_like(mu), torch.ones_like(std))
+        q = torch.distributions.Normal(mu, std)
 
-    def forward(self,z):
-        x= self.mlp1(z)
-        return x
- 
+        # 2. get the probabilities from the equation
+        log_qzx = q.log_prob(z)
+        log_pz = p.log_prob(z)
 
-from torch.utils.tensorboard import SummaryWriter
+        # kl
+        kl = (log_qzx - log_pz)
+        kl = kl.sum(-1)
+        return kl
+        # return -0.5 * torch.mean(torch.sum(1 + 2 * logstd - mu**2 - logstd.exp()**2, dim=1))
 
-out_channels = 2
-num_features = data_train[0].num_features
-epochs = 1000
-loss_in = torch.nn.MSELoss()
-sigL=torch.nn.Sigmoid()
-model = VGAE(encoder=VariationalGCNEncoder(num_features, out_channels),decoder=DecoderMLP())  # new line
-device = torch.device('cpu')
+    def training_step(self, batch):
+        running_loss=[0.,0.,0.]
+        if self.count==1000:
+            self.lr=self.lr/2
+            self.configure_optimizers(lr=self.lr)
+            self.count=0
+        # elif self.count==500:
+        #     self.kl_weight=1.
+        for i in iter(batch):
+            self.optimizer.zero_grad()
+            x, y = i
 
-model = model.to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)
+            # encode x to get the mu and variance parameters
+            x_encoded, mu, std = self.forward(x)
 
-def train():
-    model.train()
+            q=torch.distributions.Normal(mu,std)
+            z=q.rsample()
 
-    for i in data_train2:
-        optimizer.zero_grad()
-        z = model.encode(i.x,i.edge_index)
-        xt2 = model.decode(torch.reshape(z,(BS,6)))
-        xt0=xt2[:,1:10]
-        loss = loss_in(xt0,torch.reshape(i.y[:,:3],(xt0.size())))
+            # decoded
+            x_hat, A, B = self.decoder(z)
 
-        loss = loss + ((1 / i.num_nodes) * model.kl_loss())/100  # new line 
-  
-        loss.backward()
-        optimizer.step()
+            zout=torch.empty_like(z,requires_grad=False)
+            for j in range(zout.size()[0]):
+                zout[j,:]=A@z[j,:]+B#*x[j][-1]#torch.reshape(torch.reshape(A[0,:,:]@z[j,:],(self.latent_dim,1)))  
 
-    return float(loss)
+            y_encoded, muy, stdy = self.forward(y)
+            qy=torch.distributions.Normal(muy,stdy)
+            ztp1=qy.rsample()  
 
+            recon_loss = self.gaussian_likelihood(x_hat, self.log_scale, x)#F.mse_loss(z,zhat)-F.mse_loss(x_hat,x)#
+            kl = self.kl_divergence(z, mu, std)*self.kl_weight
+            lin_loss=F.mse_loss(zout,ztp1)*2.
+            elbo=(kl-recon_loss).mean()+lin_loss
+            # loss_in+=F.mse_loss(zout,z)
+            # loss_in+= self.kl_divergence(z, mu, logstd)/100.
+            elbo.backward()
+            # loss_in.backward()
+            self.optimizer.step()
+            running_loss[0] += recon_loss.mean().item()
+            running_loss[1] += kl.mean().item()#F.mse_loss(zout,z).item()
+            running_loss[2] += lin_loss.item()
+        self.count+=1
+        return running_loss
+# import matplotlib.pyplot as plt
+# plt.plot(z[:,0].detach().numpy())
+# plt.plot(zout[:,0].detach().numpy())
+# import matplotlib.pyplot as plt
+# plt.plot(x[:,0].detach().numpy())
+# plt.plot(x_hat[:,0].detach().numpy())
 
-def test():
-    with torch.no_grad():
-        model.eval()
-        loss=0
-        # xout=np.zeros((1,9))
-        # xin=np.zeros((1,12))
-        # edge_out=np.zeros((1,3))
-        for i in data_test:
-            optimizer.zero_grad()
-            z = model.encode(i.x,i.edge_index)
-            xt2 = model.decode(torch.reshape(z,(1,6)))
-            xt0=xt2[:,1:10]
-            xt1=sigL(xt2[:,9:12])
-            loss = loss+loss_in(xt0,torch.reshape(i.y[:,:3],(xt0.size())))
+    def test(self, batch):
+        with torch.no_grad():
+            
+            running_loss=[0.,0.,0.]
+            for i in iter(batch):
+                self.optimizer.zero_grad()
+                x, y = i
 
-            xi = torch.reshape(i.y,(xt2.size()))
-            if i==0:
-                xout[0,:]=xt0.detach().numpy()
-                xin[0,:]=xi.detach().numpy()
-                edge_out[0,:]=xt1.detach().numpy()
-            else:
-                xout=np.append(xout,xt0.detach().numpy(),axis=0)
-                xin=np.append(xin,xi.detach().numpy(),axis=0)
-                edge_out=np.append(edge_out,xt1.detach().numpy(),axis=0)
+                # encode x to get the mu and variance parameters
+                x_encoded, mu, std = self.forward(x)
 
-    return loss
+                q=torch.distributions.Normal(mu,std)
+                z=q.rsample()
 
-writer = SummaryWriter('runs/VGAE_experiment_'+'2d_20_epochs')
-
-for epoch in range(1, epochs + 1):
-
-    loss = train()
-    errors = test()
-
-    print('Epoch: {:03d}, AUC: {:.4f}'.format(epoch, errors))
-    
-fname="./modelFE"+str(epoch)
-torch.save(model.state_dict(), fname)
+                # decoded
+                x_hat, A, B = self.decoder(z)
+        return x_hat.detach().numpy(), z.detach().numpy(), x.detach().numpy()
