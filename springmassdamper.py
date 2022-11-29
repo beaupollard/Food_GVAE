@@ -7,6 +7,14 @@ import pandas as pd
 import random
 import math
 
+def normalize(xin):
+    meanx=np.mean(xin[-200:])
+    maxx=max(xin)
+    minx=min(xin)
+    xout=(xin-minx)/max(xin-minx)
+    xout=xout-np.mean(xout)+meanx
+    return xout
+
 def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
     ## Initialization ##
     tstart = 0
@@ -47,15 +55,18 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
     
     ## Run 4 different simulations where each one has different parameters ##
     for j in range(run_nums):
-        k=[abs(random.gauss(20.,0.5))]
-        m=[abs(random.gauss(30.,0.5))]
+        k=[abs(random.gauss(20.,5.))]
+        m=[abs(random.gauss(30.,2.5))]
         # k=[kout[j]]#[abs(random.gauss(20.,5.)),abs(random.gauss(20.,5.)),abs(random.gauss(20.,5.))]
         # m=[mout[j]]#[abs(random.gauss(30.,10.)),abs(random.gauss(30.,10.)),abs(random.gauss(30.,10.))]
         c=[2*(k[0]*m[0])**0.5]#[abs(random.gauss(10.,5.)),abs(random.gauss(10.,5.)),abs(random.gauss(10.,5.))]
+        offset=0.
+        while offset<1.:
+            offset=abs(random.gauss(1.,1.25))
         if j<8:
-            c[0]=c[0]/abs(random.gauss(6.,2.))
+            c[0]=c[0]/offset#abs(random.gauss(6.,2.))
         elif j>run_nums-9:
-            c[0]=c[0]*abs(random.gauss(6.,2.))
+            c[0]=c[0]*offset#abs(random.gauss(6.,2.))
         # x_int=[0.,random.gauss(0.,0.25),0.,random.gauss(0.,0.25),0.,random.gauss(0.,0.25)]
         # x_int=[0.,0.,0.,0.,0.,0.]
         omega_des=math.pi/2#random.gauss(2.,0.5)#0.25*(k[0]/m[0])**0.5
@@ -65,7 +76,8 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
         for h in range(num_repeats):
             x_int=[random.gauss(0.,0.025),0.]#[random.gauss(0.,0.1),random.gauss(0.,0.25)]#,random.gauss(0.,0.1),random.gauss(0.,0.25),random.gauss(0.,0.1),random.gauss(0.,0.25)]
             x0=np.append(x0,x_int[0])
-            x1=np.append(x1,x_int[1])            
+            x1=np.append(x1,x_int[1]) 
+            # xdes=abs(random.gauss(0.15,0.01))           
             # x_int=[0.,random.gauss(0.,0.25),0.,random.gauss(0.,0.25),0.,random.gauss(0.,0.25)]
             for i in range(0,len(t),int_t):
                 
@@ -91,12 +103,15 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
 
                 x_int=x[-1,:]
 
+        # x0_out.append(normalize(x0))
+        # x1_out.append(normalize(x1))
         x0_out.append(x0)
         x1_out.append(x1)
         F=[]
         Fi=0
         for i,x in enumerate(x0):
             F=np.append(F,k[0]*x+c[0]*x1[i])
+        # F_out.append(normalize(F))
         F_out.append(F)
     # ## Recalculate the Forces ##
     # F=[]
