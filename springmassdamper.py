@@ -38,6 +38,16 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
     ## Integrate using RK4 ##
     def mydiff(x,t,m,k,c,xdes,Fi,weight,vdes):
         F=k[0]*xdes#(k[0]*x[0]+c[0]*x[1])+m[0]*2.75*(xdes-x[0])+m[0]*0.75*(vdes-x[1])#PID(xdes,x[0],Fi)
+        # F=(k[0]*x[0]+c[0]*x[1])
+        dxdt0=x[1]
+        dxdt1=1/m[0]*(F-k[0]*x[0]-c[0]*x[1])
+        dxdt = [dxdt0, dxdt1]
+        return dxdt
+
+    def mydiff_force(x,t,m,k,c,xdes,Fi,weight,vdes):
+        Frec=(k[0]*x[0]+c[0]*x[1])
+        dfdt=Frec-xdes
+        F=Frec+(m[0]*(xdes-Frec)-m[0]*dfdt)
         dxdt0=x[1]
         dxdt1=1/m[0]*(F-k[0]*x[0]-c[0]*x[1])
         dxdt = [dxdt0, dxdt1]
@@ -84,13 +94,14 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
                 # if i==len(t)-10:
                 #     print('hey')
                 tin=t[i:i+int_t+1]
+                # xdes=k[0]*x0[-1]+c[0]*x1[-1]
                 # xdes=0.15#0.1*math.sin(omega_des*tin[-1])
                 xdes=0.1+0.22*math.sin(omega_des*tin[-1])
                 vdes=0.0+omega_des*0.22*math.cos(omega_des*tin[-1])
                 weights=xdes*k[0]+random.gauss(0.,0.05)
                 xd_prev.append(xdes)
                 # Fiout = np.append(Fiout,np.ones(len(tin,)-1))
-                x = odeint(mydiff, x_int, tin,args=(m,k,c,xdes,Fi,weights,vdes))
+                x = odeint(mydiff_force, x_int, tin,args=(m,k,c,xdes,Fi,weights,vdes))
                 # Fi=-0.01*(weights*(x[0,-1]-xdes))+Fi
 
                 count=count*-1
@@ -157,14 +168,14 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
 
     ## Save ground truth data to text file ##
     # out_data=1
-    zout=np.zeros((len(x0),2))
-    for i in range(len(x0)):
-        zout[i,:]=np.array([x0[i],x1[i]])#,x2[i],x3[i],x4[i],x5[i]])
+    # zout=np.zeros((len(x0),2))
+    # for i in range(len(x0)):
+    #     zout[i,:]=np.array([x0[i],x1[i]])#,x2[i],x3[i],x4[i],x5[i]])
 
-    np.savetxt('pos'+str(out_data)+'.txt', zout, delimiter='\t', newline='\n')
-    a0=0
-    a1=0
-    a2=0
+    # np.savetxt('pos'+str(out_data)+'.txt', zout, delimiter='\t', newline='\n')
+    # a0=0
+    # a1=0
+    # a2=0
     # for i in range(len(x0)-1):
         # a0=np.append(a0,(x1[i+1]-x1[i])/(dt))
         # a1=np.append(a1,(x3[i+1]-x3[i])/(dt))

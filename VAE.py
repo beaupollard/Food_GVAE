@@ -9,7 +9,7 @@ class VAE(nn.Module):
         super(VAE, self).__init__()
         self.lr=lr
         self.count=0
-        self.kl_weight=0.5
+        self.kl_weight=0.4
         self.flatten = nn.Flatten()
         self.latent_dim=latent_dim
         self.linear_relu_stack = nn.Sequential(
@@ -119,15 +119,15 @@ class VAE(nn.Module):
             qy=torch.distributions.Normal(muy,stdy)
             ztp1=qy.rsample()  
 
-            # zout=torch.empty_like(z,requires_grad=False)
-            # for j in range(zout.size()[0]):
-            #     zout[j,:]=A@z[j,:]#+B#*x[j][-1]#torch.reshape(torch.reshape(A[0,:,:]@z[j,:],(self.latent_dim,1)))  
-            # lin_loss=F.mse_loss(zout,ztp1)*1.
+            zout=torch.empty_like(z,requires_grad=False)
+            for j in range(zout.size()[0]):
+                zout[j,:]=A@z[j,:]#+B#*x[j][-1]#torch.reshape(torch.reshape(A[0,:,:]@z[j,:],(self.latent_dim,1)))  
+            lin_loss=F.mse_loss(zout,ztp1)*1.
 
-            eigval, eigvec=torch.linalg.eig(A)
-            eigs=torch.column_stack((eigval.real,eigvec.real,eigval.imag,eigvec.imag))
-            eigs_gt=torch.tensor([[1.,-1.],[(2)**0.5/2,-(2)**0.5/2],[(2)**0.5/2,(2)**0.5/2],[0.,0.],[0,0],[0,0]],dtype=torch.float).T
-            lin_loss=F.mse_loss(eigs_gt,eigs)*1.
+            # eigval, eigvec=torch.linalg.eig(A)
+            # eigs=torch.column_stack((eigval.real,eigvec.real,eigval.imag,eigvec.imag))
+            # eigs_gt=torch.tensor([[1.,-1.],[(2)**0.5/2,-(2)**0.5/2],[(2)**0.5/2,(2)**0.5/2],[0.,0.],[0,0],[0,0]],dtype=torch.float).T
+            # lin_loss=lin_loss+F.mse_loss(eigs_gt,eigs)*1.
 
             recon_loss = self.gaussian_likelihood(x_hat, self.log_scale, x)#F.mse_loss(z,zhat)-F.mse_loss(x_hat,x)#
             kl = self.kl_divergence(z, mu, std)*self.kl_weight

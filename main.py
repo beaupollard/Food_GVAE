@@ -21,27 +21,28 @@ def plot_latent_smooth():
     output2 = signal.filtfilt(b, a, z[:,1])
     for i in range(10000,20000,1000):
         plt.plot(output[i:i+400],output2[i:i+400],'b')
-    plt.plot(output[:1000],output2[:1000])
-    plt.plot(output[-1000:],output2[-1000:])
+    plt.plot(output[:1000],output2[:1000],'r')
+    plt.plot(output[-1000:],output2[-1000:],'y')
     plt.show()
 
 num_repeats=10
 run_nums=4
 
-BS=128#256
+BS=256
 percent_train=0.8
 d1=smd.run_sim(run_nums=30,out_data=2,num_repeats=1)
-
+# d1=torch.load('data_2.pt')#smd.run_sim(run_nums=2,out_data=2,num_repeats=1)
 train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=True)
 
 model=VAE()
-# model.load_state_dict(torch.load("./current_model2"))
-for i in range(400):
+# model.load_state_dict(torch.load("./current_model6"))
+for i in range(1000):
     loss=model.training_step(train)
-    if i==200:
-        plot_latent_smooth()
+    # if i==500:
+    # if loss[-1]<1.1:
+    #     plot_latent_smooth()
     print(i, loss)
-torch.save(model.state_dict(), 'current_model6')
+torch.save(model.state_dict(), 'current_model7')
 
 
 # ## Test ##
