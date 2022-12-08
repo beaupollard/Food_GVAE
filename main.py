@@ -28,17 +28,19 @@ def plot_latent_smooth():
 num_repeats=10
 run_nums=4
 
-BS=256
+BS=20
 percent_train=0.8
-d1=smd.run_sim(run_nums=30,out_data=2,num_repeats=1)
+d1=smd.run_sim(run_nums=200,out_data=2,num_repeats=1)
 # d1=torch.load('data_2.pt')#smd.run_sim(run_nums=2,out_data=2,num_repeats=1)
-train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=True)
+train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=False)
 
 model=VAE()
 # model.load_state_dict(torch.load("./current_model6"))
 for i in range(1000):
     loss=model.training_step(train)
-    # if i==500:
+    if i==5:
+        test=torch.utils.data.DataLoader(d1,batch_size=len(d1), shuffle=False)
+        xestT, xgtT, zestT, zt1T = model.test(test)        
     # if loss[-1]<1.1:
     #     plot_latent_smooth()
     print(i, loss)
@@ -46,13 +48,13 @@ torch.save(model.state_dict(), 'current_model7')
 
 
 # ## Test ##
-model=VAE()
+# model=VAE()
 
-model.load_state_dict(torch.load("./current_model5"))
-model.eval()
-d2=torch.load('data_1.pt')#smd.run_sim(run_nums=2,out_data=2,num_repeats=1)
-test=torch.utils.data.DataLoader(d2,batch_size=len(d2), shuffle=False)
-xhat, z, x = model.test(test)
+# model.load_state_dict(torch.load("./current_model5"))
+# model.eval()
+# d2=torch.load('data_1.pt')#smd.run_sim(run_nums=2,out_data=2,num_repeats=1)
+test=torch.utils.data.DataLoader(d1,batch_size=len(d1), shuffle=False)
+xestT, xgtT, zestT, zt1T = model.test(test)
 # animation_test.animate_latent(z,'latentunder.mp4','b',0,1000,'z')
 # animation_test.animate_latent(z,'latentcritical.mp4','r',8991,8991+1000,'z')
 # animation_test.animate_latent(z,'latentover.mp4','k',21978,21978+1000,'z')
