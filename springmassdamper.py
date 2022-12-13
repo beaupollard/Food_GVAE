@@ -193,11 +193,11 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
     data=[]
     edge=torch.tensor
     count=0
-    for j in range(len(x0_out)):
+    for j in range(len(x0_out)-1):
         # for i in range(len(x0_out[0])-1):
-        x=torch.tensor([x0_out[j][:],x1_out[j][:],F_out[j][:]],dtype=torch.float)#.T
-        # y=torch.tensor([x0_out[j][i+1],x1_out[j][i+1],F_out[j][i+1]],dtype=torch.float)  
-        data.append(x)
+        x=torch.tensor([x0_out[j][1:-1],x1_out[j][1:-1],F_out[j][1:-1]],dtype=torch.float)#.T
+        y=torch.tensor([x0_out[j][2:],x1_out[j][2:],F_out[j][2:]],dtype=torch.float)  
+        data.append([x,y])
 
     torch.save(data,os.path.join('./',f'data_{out_data}.pt'))
     return data

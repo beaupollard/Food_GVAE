@@ -5,18 +5,21 @@ from numpy.linalg import eig
 import numpy as np
 
 class VAE(nn.Module):
-    def __init__(self, enc_out_dim=3, latent_dim=2, input_height=3,lr=1e-3,hidden_layers=64,rnn_layers=64):
+    def __init__(self, enc_out_dim=3, latent_dim=2, input_height=3,lr=1e-2,hidden_layers=64,rnn_layers=64):
         super(VAE, self).__init__()
         self.lr=lr
         self.count=0
-        self.kl_weight=0.4
+        self.kl_weight=0.
         self.flatten = nn.Flatten()
         self.latent_dim=latent_dim
+        self.hidden_layers=hidden_layers
         self.rnn_hidden_layers=rnn_layers
         self.enc_out_dim=enc_out_dim
         self.linear_relu_stack = nn.Sequential(
             nn.Linear(input_height, hidden_layers),
-            nn.ReLU(),
+        )
+        self.hidden_stack = nn.Sequential(
+            nn.Linear(hidden_layers, hidden_layers),
         )
         self.linear_mu = nn.Sequential(
             nn.Linear(hidden_layers, latent_dim),
@@ -55,24 +58,26 @@ class VAE(nn.Module):
         else:
             return mu
 
-    def forward(self, x):
+    def forward(self, x, hn):
         # x = self.flatten(x)
-        logits = self.linear_relu_stack(x)
+        
+        logits = F.tanh(self.linear_relu_stack(x)+self.hidden_stack(hn))
         mu = self.linear_mu(logits)
         logstd = torch.exp(self.linear_logstd(logits)/2)
         # z = self.reparametrize(mu,logstd)
         return logits, mu, logstd
 
-    def decoder_rnn(self,z,ht_1):
-        xhat= self.decoder0(z[:,:2])
-        lin=self.rnn(z)+self.rnn_hidden(ht_1)
+    # def encoder_rnn(self,z,ht_1):
+    #     xhat= self.decoder0(z[:,:2])
+    #     lin=self.rnn(z)+self.rnn_hidden(ht_1)
 
       
-        # A=torch.reshape(lin[:self.latent_dim**2,0],(self.latent_dim,self.latent_dim))
-        # B=torch.reshape(lin[self.latent_dim**2:self.latent_dim**2+self.latent_dim,0],(self.latent_dim,))
-        return xhat, self.rnn_out(lin), lin
+    #     # A=torch.reshape(lin[:self.latent_dim**2,0],(self.latent_dim,self.latent_dim))
+    #     # B=torch.reshape(lin[self.latent_dim**2:self.latent_dim**2+self.latent_dim,0],(self.latent_dim,))
+    #     return xhat, self.rnn_out(lin), lin
    
     def decoder(self,z):
+        
         xhat= self.decoder0(z)
         lin=self.decoder1(z)
         A=torch.reshape(lin.mean(dim=0)[:self.latent_dim**2],(self.latent_dim,self.latent_dim))
@@ -119,17 +124,19 @@ class VAE(nn.Module):
             self.lr=self.lr/2
             self.configure_optimizers(lr=self.lr)
             self.count=0
-        # elif self.count==500:
-        #     self.kl_weight=1.
-        for j in iter(batch):
-            ht_1=torch.zeros((len(j[:,0,0]),self.rnn_hidden_layers))
-            for i in range(1,len(j[0,0,:])-1):
-                self.optimizer.zero_grad()
-                x = j[:,:,i]
-                y = j[:,:,i+1]
 
+        for j in iter(batch):
+            self.optimizer.zero_grad()
+            htn=torch.zeros((self.hidden_layers),dtype=torch.float)
+            for i in range(len(j[0][0,0,:])):
+                
+                # ht_1=torch.zeros((len(j[:,0,0]),self.rnn_hidden_layers))
+                # for i in range(1,len(j[0,0,:])-1):
+                
+                x = j[0][:,:,i]
+                y = j[1][:,:,i]
                 # encode x to get the mu and variance parameters
-                x_encoded, mu, std = self.forward(x)
+                htn, mu, std = self.forward(x,htn)
 
                 q=torch.distributions.Normal(mu,std)
                 z=q.rsample()
@@ -137,19 +144,19 @@ class VAE(nn.Module):
 
                 
                 # decoded
-                x_hat, zout, ht_1 = self.decoder_rnn(z,ht_1)
+                x_hat, A, B = self.decoder(z)
 
-                y_encoded, muy, stdy = self.forward(y)
-                qy=torch.distributions.Normal(muy,stdy)
-                ztp1=qy.rsample()  
+                # y_encoded, muy, stdy = self.forward(y,htn)
+                # qy=torch.distributions.Normal(muy,stdy)
+                # ztp1=qy.rsample()  
 
                 # zout=torch.empty_like(z,requires_grad=False)
-                # for j in range(zout.size()[0]):
-                #     zout[j,:]=A@z[j,:]#+B#*x[j][-1]#torch.reshape(torch.reshape(A[0,:,:]@z[j,:],(self.latent_dim,1)))  
-                if i==1:
-                    lin_loss=F.mse_loss(zout,ztp1)*1.
-                else:
-                    lin_loss+=F.mse_loss(zout,ztp1)*1.
+                # for jj in range(zout.size()[0]):
+                #     zout[jj,:]=A@z[jj,:]#+B#*x[j][-1]#torch.reshape(torch.reshape(A[0,:,:]@z[j,:],(self.latent_dim,1)))  
+                
+                # # lin_loss=F.mse_loss(zout,ztp1)*1.
+
+                # lin_loss=F.mse_loss(zout,ztp1)*1.
                 # eigval, eigvec=torch.linalg.eig(A)
                 # eigs=torch.column_stack((eigval.real,eigvec.real,eigval.imag,eigvec.imag))
                 # eigs_gt=torch.tensor([[1.,-1.],[(2)**0.5/2,-(2)**0.5/2],[(2)**0.5/2,(2)**0.5/2],[0.,0.],[0,0],[0,0]],dtype=torch.float).T
@@ -157,16 +164,18 @@ class VAE(nn.Module):
 
                 recon_loss = self.gaussian_likelihood(x_hat, self.log_scale, x)#F.mse_loss(z,zhat)-F.mse_loss(x_hat,x)#
                 kl = self.kl_divergence(z, mu, std)*self.kl_weight
-                
-                elbo=(kl-recon_loss).mean()+lin_loss
+                if i==0:
+                    elbo=(kl-recon_loss).mean()#+lin_loss
+                else:                
+                    elbo+=(kl-recon_loss).mean()#+lin_loss
 
             elbo.backward()
 
             self.optimizer.step()
             running_loss[0] += recon_loss.mean().item()
             running_loss[1] += kl.mean().item()#F.mse_loss(zout,z).item()
-            running_loss[2] += lin_loss.item()
-            lin_ap.append(lin_loss.item())
+            running_loss[2] += 0#lin_loss.item()
+            # lin_ap.append(lin_loss.item())
         self.count+=1
         return running_loss
 # import matplotlib.pyplot as plt
@@ -187,24 +196,37 @@ class VAE(nn.Module):
             xgtT=[]
             zt1T=[]            
             for j in iter(batch):
-                ht_1=torch.zeros((len(j[:,0,0]),self.rnn_hidden_layers))
-                for i in range(1,len(j[0,0,:])-1):
-                    self.optimizer.zero_grad()
-                    x = j[:,:,i]
-                    y = j[:,:,i+1]
+                htn=torch.zeros((self.hidden_layers),dtype=torch.float)
+                self.optimizer.zero_grad()
+                for i in range(len(j[0][0,0,:])):
+                    
+                    # ht_1=torch.zeros((len(j[:,0,0]),self.rnn_hidden_layers))
+                    # for i in range(1,len(j[0,0,:])-1):
+                    
+                    x = j[0][:,:,i]
+                    y = j[1][:,:,i]
 
                     # encode x to get the mu and variance parameters
-                    x_encoded, mu, std = self.forward(x)
+                    htn, mu, std = self.forward(x,htn)
 
                     q=torch.distributions.Normal(mu,std)
                     z=q.rsample()
                     # z=torch.cat((q.rsample(),ht_1),1)
-                    y_encoded, muy, stdy = self.forward(y)
+
+                    
+                    # decoded
+                    x_hat, A, B = self.decoder(z)
+
+                    y_encoded, muy, stdy = self.forward(y,htn)
                     qy=torch.distributions.Normal(muy,stdy)
                     ztp1=qy.rsample()  
+
+                    zout=torch.empty_like(z,requires_grad=False)
+                    for jj in range(zout.size()[0]):
+                        zout[jj,:]=A@z[jj,:]
                         
                     # decoded
-                    x_hat, zout, ht_1 = self.decoder_rnn(z,ht_1)
+                    
                     xest.append(x_hat.detach().numpy())
                     xgt.append(x.detach().numpy())
                     zest.append(zout.detach().numpy())
@@ -213,4 +235,4 @@ class VAE(nn.Module):
                 xgtT.append(np.array(xgt))
                 zestT.append(np.array(zest))
                 zt1T.append(np.array(zt1))
-        return xestT, xgtT, zestT, zt1T
+        return xestT[0], xgtT[0], zestT[0], zt1T[0]

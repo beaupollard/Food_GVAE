@@ -30,7 +30,7 @@ run_nums=4
 
 BS=20
 percent_train=0.8
-d1=smd.run_sim(run_nums=200,out_data=2,num_repeats=1)
+d1=smd.run_sim(run_nums=20,out_data=2,num_repeats=1)
 # d1=torch.load('data_2.pt')#smd.run_sim(run_nums=2,out_data=2,num_repeats=1)
 train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=False)
 
@@ -38,7 +38,7 @@ model=VAE()
 # model.load_state_dict(torch.load("./current_model6"))
 for i in range(1000):
     loss=model.training_step(train)
-    if i==5:
+    if i==1000:
         test=torch.utils.data.DataLoader(d1,batch_size=len(d1), shuffle=False)
         xestT, xgtT, zestT, zt1T = model.test(test)        
     # if loss[-1]<1.1:
