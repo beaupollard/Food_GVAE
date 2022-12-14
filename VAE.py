@@ -61,7 +61,7 @@ class VAE(nn.Module):
     def forward(self, x, hn):
         # x = self.flatten(x)
         
-        logits = F.tanh(self.linear_relu_stack(x)+self.hidden_stack(hn))
+        logits = F.relu(self.linear_relu_stack(x)+self.hidden_stack(hn))
         mu = self.linear_mu(logits)
         logstd = torch.exp(self.linear_logstd(logits)/2)
         # z = self.reparametrize(mu,logstd)

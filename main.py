@@ -7,7 +7,7 @@ import springmassdamper as smd
 import copy
 import time
 import torch
-import animation_test
+# import animation_test
 from scipy import signal
 
 def plot_latent_smooth():
@@ -28,11 +28,11 @@ def plot_latent_smooth():
 num_repeats=10
 run_nums=4
 
-BS=20
+BS=32
 percent_train=0.8
-d1=smd.run_sim(run_nums=20,out_data=2,num_repeats=1)
+d1=smd.run_sim(run_nums=200,out_data=2,num_repeats=1)
 # d1=torch.load('data_2.pt')#smd.run_sim(run_nums=2,out_data=2,num_repeats=1)
-train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=False)
+train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=True)
 
 model=VAE()
 # model.load_state_dict(torch.load("./current_model6"))
