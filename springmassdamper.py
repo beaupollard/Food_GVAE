@@ -18,7 +18,7 @@ def normalize(xin):
 def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
     ## Initialization ##
     tstart = 0
-    tend = 100
+    tend = 50
     dt = 0.1
     t = np.arange(tstart,tend,dt)
     count=1
@@ -72,10 +72,10 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
         c=[2*(k[0]*m[0])**0.5]#[abs(random.gauss(10.,5.)),abs(random.gauss(10.,5.)),abs(random.gauss(10.,5.))]
         offset=0.
         while offset<1.:
-            offset=abs(random.gauss(1.,1.25))
-        if j<8:
+            offset=abs(random.gauss(1.,1.75))
+        if j<run_nums*0.1:
             c[0]=c[0]/offset#abs(random.gauss(6.,2.))
-        elif j>run_nums-9:
+        elif j>run_nums*0.9:
             c[0]=c[0]*offset#abs(random.gauss(6.,2.))
         # x_int=[0.,random.gauss(0.,0.25),0.,random.gauss(0.,0.25),0.,random.gauss(0.,0.25)]
         # x_int=[0.,0.,0.,0.,0.,0.]
@@ -84,7 +84,7 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
         x1=[]        
         # weights=40#random.gauss(30.,3.)
         for h in range(num_repeats):
-            x_int=[random.gauss(0.,0.025),0.]#[random.gauss(0.,0.1),random.gauss(0.,0.25)]#,random.gauss(0.,0.1),random.gauss(0.,0.25),random.gauss(0.,0.1),random.gauss(0.,0.25)]
+            x_int=[0.,0.]#[random.gauss(0.,0.025),0.]#[random.gauss(0.,0.1),random.gauss(0.,0.25)]#,random.gauss(0.,0.1),random.gauss(0.,0.25),random.gauss(0.,0.1),random.gauss(0.,0.25)]
             x0=np.append(x0,x_int[0])
             x1=np.append(x1,x_int[1]) 
             # xdes=abs(random.gauss(0.15,0.01))           
@@ -96,12 +96,13 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
                 tin=t[i:i+int_t+1]
                 # xdes=k[0]*x0[-1]+c[0]*x1[-1]
                 # xdes=0.15#0.1*math.sin(omega_des*tin[-1])
-                xdes=0.1+0.22*math.sin(omega_des*tin[-1])
+                xdes=0.15#+0.22*math.sin(omega_des*tin[-1])
                 vdes=0.0+omega_des*0.22*math.cos(omega_des*tin[-1])
                 weights=xdes*k[0]+random.gauss(0.,0.05)
                 xd_prev.append(xdes)
                 # Fiout = np.append(Fiout,np.ones(len(tin,)-1))
-                x = odeint(mydiff_force, x_int, tin,args=(m,k,c,xdes,Fi,weights,vdes))
+                # x = odeint(mydiff_force, x_int, tin,args=(m,k,c,xdes,Fi,weights,vdes))
+                x = odeint(mydiff, x_int, tin,args=(m,k,c,xdes,Fi,weights,vdes))
                 # Fi=-0.01*(weights*(x[0,-1]-xdes))+Fi
 
                 count=count*-1
@@ -199,6 +200,6 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
             data.append([x,y])
 
     torch.save(data,os.path.join('./',f'data_{out_data}.pt'))
-    return data
+    return data, x0_out, x1_out
 
 # run_sim(run_nums=1)

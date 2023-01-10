@@ -5,15 +5,16 @@ from numpy.linalg import eig
 import numpy as np
 
 class VAE(nn.Module):
-    def __init__(self, enc_out_dim=3, latent_dim=2, input_height=3,lr=1e-3,hidden_layers=64):
+    def __init__(self, enc_out_dim=4, latent_dim=2, input_height=4,lr=1e-3,hidden_layers=128):
         super(VAE, self).__init__()
         self.lr=lr
         self.count=0
-        self.kl_weight=0.4
+        self.kl_weight=0.01
         self.flatten = nn.Flatten()
         self.latent_dim=latent_dim
         self.linear_relu_stack = nn.Sequential(
             nn.Linear(input_height, hidden_layers),
+            # nn.Tanh()
             nn.ReLU(),
         )
         self.linear_mu = nn.Sequential(
@@ -96,16 +97,22 @@ class VAE(nn.Module):
     def training_step(self, batch):
         running_loss=[0.,0.,0.]
         lin_ap=[]
-        if self.count==200:
-            self.lr=self.lr/2
-            self.configure_optimizers(lr=self.lr)
-            self.count=0
+        # if self.count==200:
+        #     self.kl_weight+=0.2
+        #     self.lr=self.lr/2
+        #     self.configure_optimizers(lr=self.lr)
+        #     self.count=0
         # elif self.count==500:
         #     self.kl_weight=1.
         for i in iter(batch):
             self.optimizer.zero_grad()
             x, y = i
-
+            # x=torch.stack((x2[:,1],x2[:,0],x2[:,-1])).T#x2[:,1:]
+            # y=torch.stack((y2[:,1],y2[:,0],y2[:,-1])).T#y2[:,1:]
+            # x=(x2[:,:3])#torch.stack((x2[:,0],x2[:,1],x2[:,-1])).T#x2[:,1:]
+            # y=(y2[:,:3])#torch.stack((y2[:,0],y2[:,1],y2[:,-1])).T#y2[:,1:]        
+            # x=torch.nn.functional.normalize(x2[:,:3])#torch.stack((x2[:,0],x2[:,1],x2[:,-1])).T#x2[:,1:]
+            # y=torch.nn.functional.normalize(y2[:,:3])#torch.stack((y2[:,0],y2[:,1],y2[:,-1])).T#y2[:,1:]
             # encode x to get the mu and variance parameters
             x_encoded, mu, std = self.forward(x)
 
@@ -122,17 +129,17 @@ class VAE(nn.Module):
             zout=torch.empty_like(z,requires_grad=False)
             for j in range(zout.size()[0]):
                 zout[j,:]=A@z[j,:]#+B#*x[j][-1]#torch.reshape(torch.reshape(A[0,:,:]@z[j,:],(self.latent_dim,1)))  
-            lin_loss=F.mse_loss(zout,ztp1)*1.
+            lin_loss=F.mse_loss(zout,ztp1)*1.0
 
             # eigval, eigvec=torch.linalg.eig(A)
             # eigs=torch.column_stack((eigval.real,eigvec.real,eigval.imag,eigvec.imag))
             # eigs_gt=torch.tensor([[1.,-1.],[(2)**0.5/2,-(2)**0.5/2],[(2)**0.5/2,(2)**0.5/2],[0.,0.],[0,0],[0,0]],dtype=torch.float).T
             # lin_loss=lin_loss+F.mse_loss(eigs_gt,eigs)*1.
-
-            recon_loss = self.gaussian_likelihood(x_hat, self.log_scale, x)#F.mse_loss(z,zhat)-F.mse_loss(x_hat,x)#
+            recon_loss = -self.gaussian_likelihood(x_hat, self.log_scale, x)#F.mse_loss(z,zhat)-F.mse_loss(x_hat,x)#
+            # recon_loss = F.mse_loss(x_hat,x)#self.gaussian_likelihood(x_hat, self.log_scale, x)#F.mse_loss(z,zhat)-F.mse_loss(x_hat,x)#
             kl = self.kl_divergence(z, mu, std)*self.kl_weight
             
-            elbo=(kl-recon_loss).mean()+lin_loss
+            elbo=(kl+recon_loss).mean()+lin_loss
 
             elbo.backward()
 
@@ -157,7 +164,9 @@ class VAE(nn.Module):
             for i in iter(batch):
                 self.optimizer.zero_grad()
                 x, y = i
-
+                # x=torch.stack((x2[:,1],x2[:,0],x2[:,-1])).T
+                # x=(x2[:,:3])
+                # x=torch.nn.functional.normalize(x2[:,:3])#torch.stack((x2[:,0],x2[:,1],x2[:,-1])).T#x2[:,1:]
                 # encode x to get the mu and variance parameters
                 x_encoded, mu, std = self.forward(x)
 
