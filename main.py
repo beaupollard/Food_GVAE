@@ -64,6 +64,21 @@ for i in range(0,len(x),299):
     plt.plot(x[i:index[count],0])
     count+=1
 plt.show()
+
+count=0
+for i in range(0,len(x),299):
+    fs=1/0.1
+    fc = 1.  # Cut-off frequency of the filter
+    w = fc / (fs / 2) # Normalize the frequency
+    b, a = signal.butter(5, w, 'low')
+    output = signal.filtfilt(b, a, z[i:index[count],0])
+    output2 = signal.filtfilt(b, a, z[i:index[count],1])    
+    plt.plot(output,output2)
+    plt.xlabel('z_0')
+    plt.ylabel('z_1')
+    count+=1
+plt.show()
+
 # animation_test.animate_latent(z,'latentunder.mp4','b',0,1000,'z')
 # animation_test.animate_latent(z,'latentcritical.mp4','r',8991,8991+1000,'z')
 # animation_test.animate_latent(z,'latentover.mp4','k',21978,21978+1000,'z')
