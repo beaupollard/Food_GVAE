@@ -9,7 +9,7 @@ class VAE(nn.Module):
         super(VAE, self).__init__()
         self.lr=lr
         self.count=0
-        self.kl_weight=0.01
+        self.kl_weight=0.1
         self.flatten = nn.Flatten()
         self.latent_dim=latent_dim
         self.linear_relu_stack = nn.Sequential(
@@ -32,7 +32,7 @@ class VAE(nn.Module):
             nn.Linear(hidden_layers, enc_out_dim),
         )
         self.decoder1= nn.Sequential(
-            nn.Linear(latent_dim, latent_dim**2+latent_dim),
+            nn.Linear(1, latent_dim**2+latent_dim),
             # nn.Tanh(),#ReLU(),
         )
 
@@ -56,9 +56,9 @@ class VAE(nn.Module):
 
     def decoder(self,z):
         xhat= self.decoder0(z)
-        lin=self.decoder1(z)
-        A=torch.reshape(lin.mean(dim=0)[:self.latent_dim**2],(self.latent_dim,self.latent_dim))
-        B=torch.reshape(lin.mean(dim=0)[self.latent_dim**2:self.latent_dim**2+self.latent_dim],(self.latent_dim,))        
+        lin=self.decoder1(torch.tensor([0],dtype=torch.float))
+        A=torch.reshape(lin[:self.latent_dim**2],(self.latent_dim,self.latent_dim))
+        B=torch.reshape(lin[self.latent_dim**2:self.latent_dim**2+self.latent_dim],(self.latent_dim,))        
         # A=torch.reshape(lin[:self.latent_dim**2,0],(self.latent_dim,self.latent_dim))
         # B=torch.reshape(lin[self.latent_dim**2:self.latent_dim**2+self.latent_dim,0],(self.latent_dim,))
         return xhat, A, B
@@ -114,7 +114,7 @@ class VAE(nn.Module):
             # x=torch.nn.functional.normalize(x2[:,:3])#torch.stack((x2[:,0],x2[:,1],x2[:,-1])).T#x2[:,1:]
             # y=torch.nn.functional.normalize(y2[:,:3])#torch.stack((y2[:,0],y2[:,1],y2[:,-1])).T#y2[:,1:]
             # encode x to get the mu and variance parameters
-            x_encoded, mu, std = self.forward(x)
+            x_encoded, mu, std = self.forward(x[:,:4])
 
             q=torch.distributions.Normal(mu,std)
             z=q.rsample()
@@ -122,20 +122,20 @@ class VAE(nn.Module):
             # decoded
             x_hat, A, B = self.decoder(z)
 
-            y_encoded, muy, stdy = self.forward(y)
+            y_encoded, muy, stdy = self.forward(y[:,:4])
             qy=torch.distributions.Normal(muy,stdy)
             ztp1=qy.rsample()  
 
             zout=torch.empty_like(z,requires_grad=False)
             for j in range(zout.size()[0]):
-                zout[j,:]=A@z[j,:]#+B#*x[j][-1]#torch.reshape(torch.reshape(A[0,:,:]@z[j,:],(self.latent_dim,1)))  
+                zout[j,:]=A@z[j,:]+B*x[j,-1]#+B#*x[j][-1]#torch.reshape(torch.reshape(A[0,:,:]@z[j,:],(self.latent_dim,1)))  
             lin_loss=F.mse_loss(zout,ztp1)*1.0
 
             # eigval, eigvec=torch.linalg.eig(A)
             # eigs=torch.column_stack((eigval.real,eigvec.real,eigval.imag,eigvec.imag))
             # eigs_gt=torch.tensor([[1.,-1.],[(2)**0.5/2,-(2)**0.5/2],[(2)**0.5/2,(2)**0.5/2],[0.,0.],[0,0],[0,0]],dtype=torch.float).T
             # lin_loss=lin_loss+F.mse_loss(eigs_gt,eigs)*1.
-            recon_loss = -self.gaussian_likelihood(x_hat, self.log_scale, x)#F.mse_loss(z,zhat)-F.mse_loss(x_hat,x)#
+            recon_loss = -self.gaussian_likelihood(x_hat, self.log_scale, x[:,:4])#F.mse_loss(z,zhat)-F.mse_loss(x_hat,x)#
             # recon_loss = F.mse_loss(x_hat,x)#self.gaussian_likelihood(x_hat, self.log_scale, x)#F.mse_loss(z,zhat)-F.mse_loss(x_hat,x)#
             kl = self.kl_divergence(z, mu, std)*self.kl_weight
             
@@ -168,7 +168,7 @@ class VAE(nn.Module):
                 # x=(x2[:,:3])
                 # x=torch.nn.functional.normalize(x2[:,:3])#torch.stack((x2[:,0],x2[:,1],x2[:,-1])).T#x2[:,1:]
                 # encode x to get the mu and variance parameters
-                x_encoded, mu, std = self.forward(x)
+                x_encoded, mu, std = self.forward(x[:,:4])
 
                 q=torch.distributions.Normal(mu,std)
                 z=q.rsample()

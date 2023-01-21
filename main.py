@@ -30,12 +30,13 @@ run_nums=4
 
 BS=512
 percent_train=0.8
-# d1=smd.run_sim(run_nums=40,out_data=2,num_repeats=1)
-d1=torch.load('data_exp2.pt')#smd.run_sim(run_nums=2,out_data=2,num_repeats=1)
+d1, _, _=smd.run_sim(run_nums=30,out_data=3,num_repeats=1)
+# d1=torch.load('data_2.pt')#smd.run_sim(run_nums=2,out_data=2,num_repeats=1)
+# d1=torch.load('data_exp2.pt')#smd.run_sim(run_nums=2,out_data=2,num_repeats=1)
 train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=True)
 
 model=VAE()
-model.load_state_dict(torch.load("./current_model_exp2"))
+# model.load_state_dict(torch.load("./current_model_exp2"))
 for i in range(10000):
     loss=model.training_step(train)
     # if i==500:
