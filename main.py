@@ -28,17 +28,19 @@ def plot_latent_smooth():
 num_repeats=10
 run_nums=4
 
-BS=512
+BS=512*4
 percent_train=0.8
-d1, _, _=smd.run_sim(run_nums=30,out_data=3,num_repeats=1)
-# d1=torch.load('data_2.pt')#smd.run_sim(run_nums=2,out_data=2,num_repeats=1)
+# d1, _, _=smd.run_sim(run_nums=30,out_data=3,num_repeats=1)
+d1=torch.load('data_3.pt')#smd.run_sim(run_nums=2,out_data=2,num_repeats=1)
 # d1=torch.load('data_exp2.pt')#smd.run_sim(run_nums=2,out_data=2,num_repeats=1)
 train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=True)
 
 model=VAE()
+device = torch.device("cpu")#"cuda:0" if torch.cuda.is_available() else "cpu")
+model.to(device)
 # model.load_state_dict(torch.load("./current_model_exp2"))
 for i in range(10000):
-    loss=model.training_step(train)
+    loss=model.training_step(train,device)
     # if i==500:
     # if loss[-1]<1.1:
     #     plot_latent_smooth()
@@ -53,7 +55,7 @@ model=VAE()
 # model.eval()
 # d2=torch.load('data_1.pt')#smd.run_sim(run_nums=2,out_data=2,num_repeats=1)
 test=torch.utils.data.DataLoader(d1,batch_size=len(d1), shuffle=False)
-xhat, z, x = model.test(test)
+xhat, z, x = model.test(test,device)
 index=[]
 for i in range(0,len(x),299):
     try:

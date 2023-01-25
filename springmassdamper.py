@@ -30,7 +30,9 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
     x2_out=[]
     x3_out=[]
     x4_out=[]
-    x5_out=[]    
+    x5_out=[]  
+    x6_out=[]
+    x7_out=[] 
     F_out=[]
     x4=[]
     x5=[]
@@ -41,13 +43,18 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
     
     ## Integrate using RK4 ##
     def mydiff(x,t,m,k,c,F):
+        l=0.15
+        dxdt7=0
+        dxdt5=0
         dxdt0=x[1]
         dxdt1=1/m[0]*(F-k[0]*(x[0]-x[2])-c[0]*(x[1]-x[3]))
         dxdt2=x[3]
         dxdt3=1/m[1]*(k[0]*(x[0]-x[2])+c[0]*(x[1]-x[3])-k[1]*(x[2]-x[4])-c[1]*(x[3]-x[4]))
         dxdt4=x[5]
-        dxdt5=1/m[2]*(k[1]*(x[2]-x[4])+c[1]*(x[3]-x[4]))
-        dxdt = [dxdt0, dxdt1, dxdt2, dxdt3, dxdt4, dxdt5]
+        dxdt5=1/(m[2]+m[3])*(k[1]*(x[2]-x[4])+c[1]*(x[3]-x[4])-m[3]*l*dxdt7*math.cos(x[6])+m[3]*l*x[7]**2*math.sin(x[6]))
+        dxdt6=x[7]
+        dxdt7=1/(m[3]*l)*(m[3]*l*math.sin(x[6])*(x[5]*x[7]-9.81)+m[3]*l*x[5]*x[7]*math.sin(x[6])-m[3]*l*dxdt5*math.cos(x[6])-x[7]*c[3])
+        dxdt = [dxdt0, dxdt1, dxdt2, dxdt3, dxdt4, dxdt5, dxdt6, dxdt7]
         return dxdt
 
     def mydiff_force(x,t,m,k,c,xdes,Fi,weight,vdes):
@@ -74,22 +81,25 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
         # k=[abs(random.gauss(20.,5.))]
         # m=[abs(random.gauss(30.,2.5))]
         k = [20., 15., 17.5]
-        m = [26.,30.,20.]
+        m = [26.,30.,20.,5.]
+
         # k=[kout[j]]#[abs(random.gauss(20.,5.)),abs(random.gauss(20.,5.)),abs(random.gauss(20.,5.))]
         # m=[mout[j]]#[abs(random.gauss(30.,10.)),abs(random.gauss(30.,10.)),abs(random.gauss(30.,10.))]
 
-        c=[2*(k[0]*m[0])**0.5,2*(k[1]*m[1])**0.5*1.05,2*(k[2]*m[2])**0.5*0.95]
+        c=[2*(k[0]*m[0])**0.5,2*(k[1]*m[1])**0.5*1.05,2*(k[2]*m[2])**0.5*0.95,0.1]
 
        
         # weights=40#random.gauss(30.,3.)
         for h in range(num_repeats):
-            x_int=[0.,0.,0.,0.,0.,0.]#[random.gauss(0.,0.025),0.]#[random.gauss(0.,0.1),random.gauss(0.,0.25)]#,random.gauss(0.,0.1),random.gauss(0.,0.25),random.gauss(0.,0.1),random.gauss(0.,0.25)]
+            x_int=[0.,0.,0.,0.,0.,0.,20*math.pi/180,0.]#[random.gauss(0.,0.025),0.]#[random.gauss(0.,0.1),random.gauss(0.,0.25)]#,random.gauss(0.,0.1),random.gauss(0.,0.25),random.gauss(0.,0.1),random.gauss(0.,0.25)]
             x0=[x_int[0]]
             x1=[x_int[1]]
             x2=[x_int[2]]
             x3=[x_int[3]]
             x4=[x_int[4]]
             x5=[x_int[5]]
+            x6=[x_int[6]]
+            x7=[x_int[7]]
             xdes=0.15#abs(random.gauss(0.15,0.01))  
             kp = random.gauss(20.,2.) 
             ki = 0.0#random.gauss(0.01,0.001) 
@@ -116,7 +126,8 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
                 x3=np.append(x3,x[:-1,3])
                 x4=np.append(x4,x[:-1,4])
                 x5=np.append(x5,x[:-1,5])
-
+                x6=np.append(x6,x[:-1,6])
+                x7=np.append(x7,x[:-1,7])
                 x_int=x[-1,:]
 
         # x0_out.append(normalize(x0))
@@ -127,6 +138,8 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
         x3_out.append(x3) 
         x4_out.append(x4)
         x5_out.append(x5)
+        x6_out.append(x6)
+        x7_out.append(x7)
         F_out.append(F_0)                  
 
     # ## Recalculate the Forces ##
@@ -199,8 +212,8 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
     count=0
     for j in range(len(x0_out)):
         for i in range(len(x0_out[0])-1):
-            x=torch.tensor([x0_out[j][i],x1_out[j][i],x4_out[j][i],x5_out[j][i],F_out[j][i]],dtype=torch.float)
-            y=torch.tensor([x0_out[j][i+1],x1_out[j][i+1],x4_out[j][i+1],x5_out[j][i+1],F_out[j][i+1]],dtype=torch.float)             
+            x=torch.tensor([x0_out[j][i],x1_out[j][i],x4_out[j][i],x5_out[j][i],x6_out[j][i],x7_out[j][i],F_out[j][i]],dtype=torch.float)
+            y=torch.tensor([x0_out[j][i+1],x1_out[j][i+1],x4_out[j][i+1],x5_out[j][i+1],x6_out[j][i],x7_out[j][i],F_out[j][i+1]],dtype=torch.float)             
             # x=torch.tensor([x0_out[j][i],x1_out[j][i],x2_out[j][i],x3_out[j][i],x4_out[j][i],x5_out[j][i],F_out[j][i]],dtype=torch.float)
             # y=torch.tensor([x0_out[j][i+1],x1_out[j][i+1],x2_out[j][i+1],x3_out[j][i+1],x4_out[j][i+1],x5_out[j][i+1],F_out[j][i+1]],dtype=torch.float)  
             data.append([x,y])
