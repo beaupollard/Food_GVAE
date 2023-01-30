@@ -25,80 +25,42 @@ def plot_latent_smooth():
     plt.plot(output[-1000:],output2[-1000:],'y')
     plt.show()
 
-num_repeats=10
-run_nums=4
 
-BS=512*4
-percent_train=0.8
-# d1, _, _=smd.run_sim(run_nums=30,out_data=3,num_repeats=1)
-d1=torch.load('data_3.pt')#smd.run_sim(run_nums=2,out_data=2,num_repeats=1)
-# d1=torch.load('data_exp2.pt')#smd.run_sim(run_nums=2,out_data=2,num_repeats=1)
-train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=True)
+BS=512*4    # Batch size for training
+
+## Run new simulations ##
+d1, sim_length, _, _=smd.run_sim(run_nums=30,out_data=3,num_repeats=1)
+
+## Load previously generated simulation data ##
+# d1=torch.load('data_3.pt')
+
+train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=True)   
 
 model=VAE()
-device = torch.device("cpu")#"cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")    # Save the model to the CPU
 model.to(device)
-# model.load_state_dict(torch.load("./current_model_exp2"))
+# model.load_state_dict(torch.load("./current_model_exp2"))     # Load a previously trained model
+
+## Training loop ##
 for i in range(10000):
     loss=model.training_step(train,device)
-    # if i==500:
-    # if loss[-1]<1.1:
-    #     plot_latent_smooth()
     print(i, loss)
-torch.save(model.state_dict(), 'current_model7')
+
+torch.save(model.state_dict(), 'current_model7')    # Save the current model
 
 
-# ## Test ##
+## Testing loop ##
 model=VAE()
 
-# model.load_state_dict(torch.load("./current_model5"))
-# model.eval()
-# d2=torch.load('data_1.pt')#smd.run_sim(run_nums=2,out_data=2,num_repeats=1)
 test=torch.utils.data.DataLoader(d1,batch_size=len(d1), shuffle=False)
 xhat, z, x = model.test(test,device)
-index=[]
-for i in range(0,len(x),299):
-    try:
-        index.append(i+np.where(x[i:i+299,0]==0.)[0][0])
-    except:
-        index.append(i+299)
-count=0
-for i in range(0,len(x),299):
-    plt.plot(x[i:index[count],0])
-    count+=1
+
+## Plot the latent space phase portrait ##
+for i in range(0,len(x),sim_length):
+    plt.plot(z[i:i+sim_length,0],z[i:i+sim_length,1])
 plt.show()
 
-count=0
-for i in range(0,len(x),299):
-    fs=1/0.1
-    fc = 1.  # Cut-off frequency of the filter
-    w = fc / (fs / 2) # Normalize the frequency
-    b, a = signal.butter(5, w, 'low')
-    output = signal.filtfilt(b, a, z[i:index[count],0])
-    output2 = signal.filtfilt(b, a, z[i:index[count],1])    
-    plt.plot(output,output2)
-    plt.xlabel('z_0')
-    plt.ylabel('z_1')
-    count+=1
+## Plot the state space phase portrait ##
+for i in range(0,len(x),sim_length):
+    plt.plot(x[i:i+sim_length,0],x[i:i+sim_length,1])
 plt.show()
-
-# animation_test.animate_latent(z,'latentunder.mp4','b',0,1000,'z')
-# animation_test.animate_latent(z,'latentcritical.mp4','r',8991,8991+1000,'z')
-# animation_test.animate_latent(z,'latentover.mp4','k',21978,21978+1000,'z')
-# animation_test.animate_latent(x,'xunder.mp4','b',0,1000,'x')
-# animation_test.animate_latent(x,'xcritical.mp4','r',8991,8991+1000,'x')
-# animation_test.animate_latent(x,'xover.mp4','k',21978,21978+1000,'x')
-# animation_test.animate_pos(x[:1000,0],0*x[:1000,0],'under_damped.mp4','b')
-# animation_test.animate_pos(x[8991:8991+1000,0],0*x[8991:8991+1000,0],'critical_damped.mp4','b')
-# animation_test.animate_pos(x[21978:21978+1000,0],0*x[21978:21978+1000,0],'over_damped.mp4','k')
-# for i in range(10000,20000,1000):
-#     plt.plot(z[i:i+400,0],z[i:i+400,1],'b')
-# x_coll=np.reshape(x[:,0],(499,4))
-# v_coll=np.reshape(x[:,1],(499,4))
-
-# plt.plot(x[:499,0],x[:499,1])
-# plt.plot(x[499:499*2,0],x[499:499*2,1])
-# plt.plot(x[499*2:499*3,0],x[499*2:499*3,1])
-# print('hey')
-
-

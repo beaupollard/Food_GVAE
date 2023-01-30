@@ -219,6 +219,6 @@ def run_sim(run_nums=1,out_data=1,num_repeats=1,test=False):
             data.append([x,y])
 
     torch.save(data,os.path.join('./',f'data_{out_data}.pt'))
-    return data, x0_out, x1_out
+    return data, len(t)-1, x0_out, x1_out
 
 # run_sim(run_nums=1)

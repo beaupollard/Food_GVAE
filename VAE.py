@@ -59,8 +59,7 @@ class VAE(nn.Module):
         lin=self.decoder1(inp)
         A=torch.reshape(lin[:self.latent_dim**2],(self.latent_dim,self.latent_dim))
         B=torch.reshape(lin[self.latent_dim**2:self.latent_dim**2+self.latent_dim],(self.latent_dim,))        
-        # A=torch.reshape(lin[:self.latent_dim**2,0],(self.latent_dim,self.latent_dim))
-        # B=torch.reshape(lin[self.latent_dim**2:self.latent_dim**2+self.latent_dim,0],(self.latent_dim,))
+
         return xhat, A, B
 
 
@@ -97,25 +96,13 @@ class VAE(nn.Module):
     def training_step(self, batch,device):
         running_loss=[0.,0.,0.]
         lin_ap=[]
-        # if self.count==200:
-        #     self.kl_weight+=0.2
-        #     self.lr=self.lr/2
-        #     self.configure_optimizers(lr=self.lr)
-        #     self.count=0
-        # elif self.count==500:
-        #     self.kl_weight=1.
+
         inp=torch.tensor([0],dtype=torch.float).to(device)
         for i in iter(batch):
             self.optimizer.zero_grad()
             x = i[0].to(device)
             y = i[1].to(device)            
-            # x, y = i
-            # x=torch.stack((x2[:,1],x2[:,0],x2[:,-1])).T#x2[:,1:]
-            # y=torch.stack((y2[:,1],y2[:,0],y2[:,-1])).T#y2[:,1:]
-            # x=(x2[:,:3])#torch.stack((x2[:,0],x2[:,1],x2[:,-1])).T#x2[:,1:]
-            # y=(y2[:,:3])#torch.stack((y2[:,0],y2[:,1],y2[:,-1])).T#y2[:,1:]        
-            # x=torch.nn.functional.normalize(x2[:,:3])#torch.stack((x2[:,0],x2[:,1],x2[:,-1])).T#x2[:,1:]
-            # y=torch.nn.functional.normalize(y2[:,:3])#torch.stack((y2[:,0],y2[:,1],y2[:,-1])).T#y2[:,1:]
+
             # encode x to get the mu and variance parameters
             x_encoded, mu, std = self.forward(x[:,2:-3])
 
@@ -129,17 +116,15 @@ class VAE(nn.Module):
             qy=torch.distributions.Normal(muy,stdy)
             ztp1=qy.rsample()  
 
+            ## Calculate the z_(t+1) estimate from linearized model ##
             zout=torch.empty_like(z,requires_grad=False)
             for j in range(zout.size()[0]):
-                zout[j,:]=A@z[j,:]+B*x[j,-1]#+B#*x[j][-1]#torch.reshape(torch.reshape(A[0,:,:]@z[j,:],(self.latent_dim,1)))  
+                zout[j,:]=A@z[j,:]+B*x[j,-1]
+            
+            ## Calculate the loss ##
             lin_loss=F.mse_loss(zout,ztp1)*1.0
 
-            # eigval, eigvec=torch.linalg.eig(A)
-            # eigs=torch.column_stack((eigval.real,eigvec.real,eigval.imag,eigvec.imag))
-            # eigs_gt=torch.tensor([[1.,-1.],[(2)**0.5/2,-(2)**0.5/2],[(2)**0.5/2,(2)**0.5/2],[0.,0.],[0,0],[0,0]],dtype=torch.float).T
-            # lin_loss=lin_loss+F.mse_loss(eigs_gt,eigs)*1.
-            recon_loss = -self.gaussian_likelihood(x_hat, self.log_scale, x[:,2:-3])#F.mse_loss(z,zhat)-F.mse_loss(x_hat,x)#
-            # recon_loss = F.mse_loss(x_hat,x)#self.gaussian_likelihood(x_hat, self.log_scale, x)#F.mse_loss(z,zhat)-F.mse_loss(x_hat,x)#
+            recon_loss = -self.gaussian_likelihood(x_hat, self.log_scale, x[:,2:-3])
             kl = self.kl_divergence(z, mu, std)*self.kl_weight
             
             elbo=(kl+recon_loss).mean()+lin_loss
@@ -148,17 +133,11 @@ class VAE(nn.Module):
 
             self.optimizer.step()
             running_loss[0] += recon_loss.mean().item()
-            running_loss[1] += kl.mean().item()#F.mse_loss(zout,z).item()
+            running_loss[1] += kl.mean().item()
             running_loss[2] += lin_loss.item()
             lin_ap.append(lin_loss.item())
         self.count+=1
         return running_loss
-# import matplotlib.pyplot as plt
-# plt.plot(z[:,0].detach().numpy())
-# plt.plot(zout[:,0].detach().numpy())
-# import matplotlib.pyplot as plt
-# plt.plot(x[:,0].detach().numpy())
-# plt.plot(x_hat[:,0].detach().numpy())
 
     def test(self, batch,device):
         with torch.no_grad():
@@ -168,9 +147,6 @@ class VAE(nn.Module):
                 self.optimizer.zero_grad()
                 x = i[0].to(device)
                 y = i[1].to(device)   
-                # x=torch.stack((x2[:,1],x2[:,0],x2[:,-1])).T
-                # x=(x2[:,:3])
-                # x=torch.nn.functional.normalize(x2[:,:3])#torch.stack((x2[:,0],x2[:,1],x2[:,-1])).T#x2[:,1:]
                 # encode x to get the mu and variance parameters
                 x_encoded, mu, std = self.forward(x[:,2:-3])
 
