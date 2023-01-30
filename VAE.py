@@ -104,7 +104,7 @@ class VAE(nn.Module):
             y = i[1].to(device)            
 
             # encode x to get the mu and variance parameters
-            x_encoded, mu, std = self.forward(x[:,2:-3])
+            x_encoded, mu, std = self.forward(x[:,:-1])
 
             q=torch.distributions.Normal(mu,std)
             z=q.rsample()
@@ -112,7 +112,7 @@ class VAE(nn.Module):
             # decoded
             x_hat, A, B = self.decoder(z,inp)
 
-            y_encoded, muy, stdy = self.forward(y[:,2:-3])
+            y_encoded, muy, stdy = self.forward(y[:,:-1])
             qy=torch.distributions.Normal(muy,stdy)
             ztp1=qy.rsample()  
 
@@ -124,7 +124,7 @@ class VAE(nn.Module):
             ## Calculate the loss ##
             lin_loss=F.mse_loss(zout,ztp1)*1.0
 
-            recon_loss = -self.gaussian_likelihood(x_hat, self.log_scale, x[:,2:-3])
+            recon_loss = -self.gaussian_likelihood(x_hat, self.log_scale, x[:,:-1])
             kl = self.kl_divergence(z, mu, std)*self.kl_weight
             
             elbo=(kl+recon_loss).mean()+lin_loss
@@ -148,7 +148,7 @@ class VAE(nn.Module):
                 x = i[0].to(device)
                 y = i[1].to(device)   
                 # encode x to get the mu and variance parameters
-                x_encoded, mu, std = self.forward(x[:,2:-3])
+                x_encoded, mu, std = self.forward(x[:,:-1])
 
                 q=torch.distributions.Normal(mu,std)
                 z=q.rsample()
