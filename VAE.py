@@ -5,11 +5,11 @@ from numpy.linalg import eig
 import numpy as np
 
 class VAE(nn.Module):
-    def __init__(self, enc_out_dim=2, latent_dim=2, input_height=2,lr=1e-3,hidden_layers=128):
+    def __init__(self, enc_out_dim=4, latent_dim=2, input_height=4,lr=1e-2,hidden_layers=128):
         super(VAE, self).__init__()
         self.lr=lr
         self.count=0
-        self.kl_weight=0.1
+        self.kl_weight=0.
         self.flatten = nn.Flatten()
         self.latent_dim=latent_dim
         self.linear_relu_stack = nn.Sequential(
@@ -39,6 +39,7 @@ class VAE(nn.Module):
         # for the gaussian likelihood
         self.log_scale = nn.Parameter(torch.Tensor([0.0]))
         self.optimizer=self.configure_optimizers(lr=lr)
+        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.99)
 
     def reparametrize(self,mu,logstd):
         if self.training:
@@ -96,7 +97,7 @@ class VAE(nn.Module):
     def training_step(self, batch,device):
         running_loss=[0.,0.,0.]
         lin_ap=[]
-
+        
         inp=torch.tensor([0],dtype=torch.float).to(device)
         for i in iter(batch):
             self.optimizer.zero_grad()
@@ -104,7 +105,7 @@ class VAE(nn.Module):
             y = i[1].to(device)            
 
             # encode x to get the mu and variance parameters
-            x_encoded, mu, std = self.forward(x[:,:-1])
+            x_encoded, mu, std = self.forward(x)
 
             q=torch.distributions.Normal(mu,std)
             z=q.rsample()
@@ -112,19 +113,19 @@ class VAE(nn.Module):
             # decoded
             x_hat, A, B = self.decoder(z,inp)
 
-            y_encoded, muy, stdy = self.forward(y[:,:-1])
+            y_encoded, muy, stdy = self.forward(y)
             qy=torch.distributions.Normal(muy,stdy)
             ztp1=qy.rsample()  
 
             ## Calculate the z_(t+1) estimate from linearized model ##
             zout=torch.empty_like(z,requires_grad=False)
             for j in range(zout.size()[0]):
-                zout[j,:]=A@z[j,:]+B*x[j,-1]
+                zout[j,:]=A@z[j,:]#+B*x[j,-1]
             
             ## Calculate the loss ##
-            lin_loss=F.mse_loss(zout,ztp1)*1.0
+            lin_loss=F.mse_loss(zout,ztp1)*.0
 
-            recon_loss = -self.gaussian_likelihood(x_hat, self.log_scale, x[:,:-1])
+            recon_loss = -self.gaussian_likelihood(x_hat, self.log_scale, x)#F.mse_loss(x_hat,x)#-self.gaussian_likelihood(x_hat, self.log_scale, x)
             kl = self.kl_divergence(z, mu, std)*self.kl_weight
             
             elbo=(kl+recon_loss).mean()+lin_loss
@@ -132,11 +133,12 @@ class VAE(nn.Module):
             elbo.backward()
 
             self.optimizer.step()
-            running_loss[0] += recon_loss.mean().item()
-            running_loss[1] += kl.mean().item()
-            running_loss[2] += lin_loss.item()
+            running_loss[0] += recon_loss.mean().item()#np.exp(recon_loss.mean().item()/len(zout))
+            running_loss[1] += kl.mean().item()#/len(zout)
+            running_loss[2] += lin_loss.item()#/len(zout)
             lin_ap.append(lin_loss.item())
         self.count+=1
+        self.scheduler.step()
         return running_loss
 
     def test(self, batch,device):
@@ -148,7 +150,7 @@ class VAE(nn.Module):
                 x = i[0].to(device)
                 y = i[1].to(device)   
                 # encode x to get the mu and variance parameters
-                x_encoded, mu, std = self.forward(x[:,:-1])
+                x_encoded, mu, std = self.forward(x)
 
                 q=torch.distributions.Normal(mu,std)
                 z=q.rsample()

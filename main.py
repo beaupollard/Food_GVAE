@@ -30,14 +30,14 @@ BS=2048    # Batch size for training
 
 ## Run new simulations ##
 # d1, sim_length, _, _=smd.run_multimass_sim(run_nums=30,out_data=3,num_repeats=1)  # run simulation of 3 masses and a pendulum
-d1, sim_length, _, _=smd.run_singlemass_sim(run_nums=30,out_data=3,num_repeats=1)   # run simulation of single mass system
+# d1, sim_length, _, _=smd.run_singlemass_sim(run_nums=30,out_data=3,num_repeats=1)   # run simulation of single mass system
 
 ## Load previously generated simulation data ##
-# d1=torch.load('data_3.pt')
+d1=torch.load('data_exp_osc_02142023.pt')
 
-train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=True)   
+train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=True)
 
-model=VAE(enc_out_dim=len(d1[0][0])-1,input_height=len(d1[0][0])-1)
+model=VAE(enc_out_dim=len(d1[0][0]),input_height=len(d1[0][0]))
 device = torch.device("cpu")    # Save the model to the CPU
 model.to(device)
 # model.load_state_dict(torch.load("./current_model_exp2"))     # Load a previously trained model
@@ -56,6 +56,7 @@ model=VAE()
 test=torch.utils.data.DataLoader(d1,batch_size=len(d1), shuffle=False)
 xhat, z, x = model.test(test,device)
 
+sim_length=424
 ## Plot the latent space phase portrait ##
 for i in range(0,len(x),sim_length):
     plt.plot(z[i:i+sim_length,0],z[i:i+sim_length,1])
