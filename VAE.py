@@ -5,16 +5,18 @@ from numpy.linalg import eig
 import numpy as np
 
 class VAE(nn.Module):
-    def __init__(self, enc_out_dim=4, latent_dim=2, input_height=4,lr=1e-2,hidden_layers=128):
+    def __init__(self, enc_out_dim=4, latent_dim=2, input_height=4,lr=1e-3,hidden_layers=128):
         super(VAE, self).__init__()
         self.lr=lr
         self.count=0
-        self.kl_weight=0.
+        self.kl_weight=0.1
         self.flatten = nn.Flatten()
         self.latent_dim=latent_dim
         self.linear_relu_stack = nn.Sequential(
             nn.Linear(input_height, hidden_layers),
             # nn.Tanh()
+            nn.ReLU(),
+            nn.Linear(hidden_layers, hidden_layers),
             nn.ReLU(),
         )
         self.linear_mu = nn.Sequential(
@@ -23,13 +25,15 @@ class VAE(nn.Module):
         )
         self.linear_logstd = nn.Sequential(
             nn.Linear(hidden_layers, latent_dim),
-            # nn.Tanh()
+            nn.ReLU()
         )
 
         self.decoder0 = nn.Sequential(
             nn.Linear(latent_dim, hidden_layers),
-            nn.Tanh(),#nn.ReLU(),
-            nn.Linear(hidden_layers, enc_out_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_layers, hidden_layers),
+            nn.ReLU(),
+            nn.Linear(hidden_layers, 2),
         )
         self.decoder1= nn.Sequential(
             nn.Linear(1, latent_dim**2+latent_dim),
@@ -123,9 +127,9 @@ class VAE(nn.Module):
                 zout[j,:]=A@z[j,:]#+B*x[j,-1]
             
             ## Calculate the loss ##
-            lin_loss=F.mse_loss(zout,ztp1)*.0
+            lin_loss=F.mse_loss(zout,ztp1)*1.0
 
-            recon_loss = -self.gaussian_likelihood(x_hat, self.log_scale, x)#F.mse_loss(x_hat,x)#-self.gaussian_likelihood(x_hat, self.log_scale, x)
+            recon_loss = -self.gaussian_likelihood(x_hat, self.log_scale, x[:,:2])#F.mse_loss(x_hat,x)#-self.gaussian_likelihood(x_hat, self.log_scale, x)
             kl = self.kl_divergence(z, mu, std)*self.kl_weight
             
             elbo=(kl+recon_loss).mean()+lin_loss
@@ -138,7 +142,7 @@ class VAE(nn.Module):
             running_loss[2] += lin_loss.item()#/len(zout)
             lin_ap.append(lin_loss.item())
         self.count+=1
-        self.scheduler.step()
+        # self.scheduler.step()
         return running_loss
 
     def test(self, batch,device):
@@ -156,5 +160,5 @@ class VAE(nn.Module):
                 z=q.rsample()
 
                 # decoded
-                x_hat, A, B = self.decoder(z,inp)
+                x_hat, A, B = self.decoder(mu,inp)
         return x_hat.detach().numpy(), z.detach().numpy(), x.detach().numpy()

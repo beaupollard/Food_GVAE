@@ -41,10 +41,14 @@ model=VAE(enc_out_dim=len(d1[0][0]),input_height=len(d1[0][0]))
 device = torch.device("cpu")    # Save the model to the CPU
 model.to(device)
 # model.load_state_dict(torch.load("./current_model_exp2"))     # Load a previously trained model
-
+count=0
 ## Training loop ##
 for i in range(10000):
     loss=model.training_step(train,device)
+    if count==10:
+        model.scheduler.step()
+        count=0
+    count+=1
     print(i, loss)
 
 torch.save(model.state_dict(), 'current_model7')    # Save the current model
