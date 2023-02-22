@@ -10,23 +10,22 @@ import torch
 import animation_test
 from scipy import signal
 
-def plot_latent_smooth():
-    test=torch.utils.data.DataLoader(d1,batch_size=len(d1), shuffle=False)
-    xhat, z, x = model.test(test)
+def plot_latent_smooth(xinp,yinp):
     fs=1/0.1
     fc = 1.  # Cut-off frequency of the filter
     w = fc / (fs / 2) # Normalize the frequency
     b, a = signal.butter(5, w, 'low')
-    output = signal.filtfilt(b, a, z[:,0])
-    output2 = signal.filtfilt(b, a, z[:,1])
-    for i in range(10000,20000,1000):
-        plt.plot(output[i:i+400],output2[i:i+400],'b')
-    plt.plot(output[:1000],output2[:1000],'r')
-    plt.plot(output[-1000:],output2[-1000:],'y')
-    plt.show()
+    output = signal.filtfilt(b, a, xinp)
+    output2 = signal.filtfilt(b, a, yinp)
+    plt.plot(output,output2)
+    # for i in range(10000,20000,1000):
+    #     plt.plot(output[i:i+400],output2[i:i+400],'b')
+    # plt.plot(output[:1000],output2[:1000],'r')
+    # plt.plot(output[-1000:],output2[-1000:],'y')
+    # plt.show()
 
 
-BS=2048    # Batch size for training
+BS=2048*8    # Batch size for training
 
 ## Run new simulations ##
 # d1, sim_length, _, _=smd.run_multimass_sim(run_nums=30,out_data=3,num_repeats=1)  # run simulation of 3 masses and a pendulum
@@ -40,18 +39,20 @@ train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=True)
 model=VAE(enc_out_dim=len(d1[0][0]),input_height=len(d1[0][0]))
 device = torch.device("cpu")    # Save the model to the CPU
 model.to(device)
-# model.load_state_dict(torch.load("./current_model_exp2"))     # Load a previously trained model
+# model.load_state_dict(torch.load("./current_modelrobot0"))     # Load a previously trained model
 count=0
 ## Training loop ##
-for i in range(10000):
+for i in range(2000):
     loss=model.training_step(train,device)
-    if count==10:
+    if count==20:
+        # model.kl_weight=1.
+        # model.lin_weight=10.0        
         model.scheduler.step()
         count=0
     count+=1
     print(i, loss)
 
-torch.save(model.state_dict(), 'current_model7')    # Save the current model
+torch.save(model.state_dict(), 'current_model9')    # Save the current model
 
 
 ## Testing loop ##

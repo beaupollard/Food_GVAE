@@ -34,7 +34,7 @@ def ctrl(xdes,kp=60.,mu=0.,std=0.1):
 
 def record_info():
     # return [sim.getObjectPosition(joint_ids[1],-1)[0], sim.getObjectPosition(joint_ids[1],-1)[2], sim.getJointPosition(joint_ids[0])]
-    return [sim.getJointForce(joint_ids[0]), sim.getObjectPosition(joint_ids[1],-1)[0], sim.getObjectPosition(joint_ids[2],-1)[0], sim.getObjectPosition(joint_ids[3],-1)[0], sim.getObjectPosition(joint_ids[3],-1)[2]]
+    return [sim.getObjectPosition(joint_ids[1],-1)[0], sim.getObjectPosition(joint_ids[2],-1)[0], sim.getObjectPosition(joint_ids[3],-1)[0], sim.getObjectPosition(joint_ids[3],-1)[2], sim.getJointForce(joint_ids[0])]
 
 def reset_scene():
     # sim.setJointPosition(joint_ids[-1],0.)
@@ -49,13 +49,14 @@ def reset_scene():
         sim.resetDynamicObject(joint_ids[1])
         sim.resetDynamicObject(joint_ids[2])
         sim.resetDynamicObject(joint_ids[6])
+        sim.resetDynamicObject(joint_ids[7])
         return True
     else:
         return False
     
 
 stopper=False
-joint_names=['/Motor_input','/Input_body','/Output','/Sphere','/Link','/l0','/l1','/Pen']#['/Pen','/Sphere']#
+joint_names=['/Motor_input','/Input_body','/Output','/Sphere','/Link','/l0','/l1','/Spherev0','/Pen']#['/Pen','/Sphere']#
 client = RemoteAPIClient()
 sim = client.getObject('sim')
 sim.startSimulation()
@@ -91,7 +92,7 @@ for j in range(20):
 sim_data=np.array(sim_data)
 
 for i in range(4):
-    sim_data[:,i+1]=(sim_data[:,i+1]-sim_data[0,i+1])
+    sim_data[:,i]=1000*(sim_data[:,i]-sim_data[0,i])
 
 ## Save as a datalist ##
 data=[]

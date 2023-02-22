@@ -3,15 +3,18 @@ import torch.nn.functional as F
 import torch
 from numpy.linalg import eig
 import numpy as np
+import copy
 
 class VAE(nn.Module):
-    def __init__(self, enc_out_dim=4, latent_dim=2, input_height=4,lr=1e-3,hidden_layers=128):
+    def __init__(self, enc_out_dim=4, latent_dim=3, input_height=4,lr=1e-3,hidden_layers=128):
         super(VAE, self).__init__()
         self.lr=lr
         self.count=0
-        self.kl_weight=0.1
+        self.kl_weight=1.0
+        self.lin_weight=1.0
         self.flatten = nn.Flatten()
         self.latent_dim=latent_dim
+        self.enc_out_dim=enc_out_dim
         self.linear_relu_stack = nn.Sequential(
             nn.Linear(input_height, hidden_layers),
             # nn.Tanh()
@@ -33,10 +36,15 @@ class VAE(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_layers, hidden_layers),
             nn.ReLU(),
-            nn.Linear(hidden_layers, 2),
+            nn.Linear(hidden_layers, enc_out_dim),
         )
         self.decoder1= nn.Sequential(
             nn.Linear(1, latent_dim**2+latent_dim),
+            # nn.Tanh(),#ReLU(),
+        )
+
+        self.decodersim1= nn.Sequential(
+            nn.Linear(1, latent_dim**2+2*latent_dim),
             # nn.Tanh(),#ReLU(),
         )
 
@@ -67,6 +75,13 @@ class VAE(nn.Module):
 
         return xhat, A, B
 
+    def decoder_sim(self,z,inp):
+        xhat= self.decoder0(z)
+        lin=self.decodersim1(inp)
+        A=torch.reshape(lin[:self.latent_dim**2],(self.latent_dim,self.latent_dim))
+        B=torch.reshape(lin[self.latent_dim**2:self.latent_dim**2+self.latent_dim],(self.latent_dim,1))        
+        K=torch.reshape(lin[self.latent_dim**2+self.latent_dim:],(1,self.latent_dim))    
+        return xhat, A, B, K
 
     def configure_optimizers(self,lr=1e-4):
         return torch.optim.Adam(self.parameters(), lr=lr)
@@ -127,9 +142,9 @@ class VAE(nn.Module):
                 zout[j,:]=A@z[j,:]#+B*x[j,-1]
             
             ## Calculate the loss ##
-            lin_loss=F.mse_loss(zout,ztp1)*1.0
+            lin_loss=F.mse_loss(zout,ztp1)*self.lin_weight
 
-            recon_loss = -self.gaussian_likelihood(x_hat, self.log_scale, x[:,:2])#F.mse_loss(x_hat,x)#-self.gaussian_likelihood(x_hat, self.log_scale, x)
+            recon_loss = -self.gaussian_likelihood(x_hat, self.log_scale, x[:,:])*100.#F.mse_loss(x_hat,x)#-self.gaussian_likelihood(x_hat, self.log_scale, x)
             kl = self.kl_divergence(z, mu, std)*self.kl_weight
             
             elbo=(kl+recon_loss).mean()+lin_loss
@@ -137,9 +152,9 @@ class VAE(nn.Module):
             elbo.backward()
 
             self.optimizer.step()
-            running_loss[0] += recon_loss.mean().item()#np.exp(recon_loss.mean().item()/len(zout))
-            running_loss[1] += kl.mean().item()#/len(zout)
-            running_loss[2] += lin_loss.item()#/len(zout)
+            running_loss[0] += np.exp(recon_loss.mean().item()/len(zout))
+            running_loss[1] += kl.mean().item()/len(zout)
+            running_loss[2] += lin_loss.item()/len(zout)
             lin_ap.append(lin_loss.item())
         self.count+=1
         # self.scheduler.step()
@@ -154,7 +169,7 @@ class VAE(nn.Module):
                 x = i[0].to(device)
                 y = i[1].to(device)   
                 # encode x to get the mu and variance parameters
-                x_encoded, mu, std = self.forward(x)
+                x_encoded, mu, std = self.forward(x[:,:self.enc_out_dim])
 
                 q=torch.distributions.Normal(mu,std)
                 z=q.rsample()
@@ -162,3 +177,109 @@ class VAE(nn.Module):
                 # decoded
                 x_hat, A, B = self.decoder(mu,inp)
         return x_hat.detach().numpy(), z.detach().numpy(), x.detach().numpy()
+
+    def training_sim(self, batch,device):
+        running_loss=[0.,0.,0.]
+        lin_ap=[]
+        
+        inp=torch.tensor([0],dtype=torch.float).to(device)
+        _, A_human, _ =self.decoder(torch.zeros(self.latent_dim,dtype=torch.float).to(device),inp)
+
+        for i in iter(batch):
+            self.optimizer.zero_grad()
+            x = i[0].to(device)
+            y = i[1].to(device)            
+
+            # encode x to get the mu and variance parameters
+            x_encoded, mu, std = self.forward(x[:,:-1])
+
+            q=torch.distributions.Normal(mu,std)
+            z=q.rsample()
+
+            # decoded
+            x_hat, A, B, K = self.decoder_sim(z,inp)
+
+            y_encoded, muy, stdy = self.forward(y[:,:-1])
+            qy=torch.distributions.Normal(muy,stdy)
+            ztp1=qy.rsample()  
+
+            ## Calculate the z_(t+1) estimate from linearized model ##
+            zout=torch.empty_like(z,requires_grad=False)
+            for j in range(zout.size()[0]):
+                zout[j,:]=(A-B@K)@z[j,:]#+B*x[j,-1]
+            # eig_loss=F.mse_loss(torch.linalg.eig(A-B@K)[1].real,torch.linalg.eig(A_human)[1].real)*1.0+F.mse_loss(torch.linalg.eig(A-B@K)[1].imag,torch.linalg.eig(A_human)[1].imag)*1.0
+            ## Calculate the loss ##
+            lin_loss=F.mse_loss(zout,ztp1)*1.0
+            ctrl_loss=F.mse_loss(-(K@z.T).flatten(),x[:,-1])
+            elbo=ctrl_loss+lin_loss
+            # elbo=(kl+recon_loss).mean()+lin_loss
+
+            elbo.backward()
+
+            self.optimizer.step()
+            running_loss[0] += ctrl_loss.item()/len(zout)#np.exp(recon_loss.mean().item()/len(zout))
+            running_loss[1] += lin_loss.item()/len(zout)#/len(zout)
+            # running_loss[2] += lin_loss.item()#/len(zout)
+            # lin_ap.append(lin_loss.item())
+        self.count+=1
+        # self.scheduler.step()
+        return running_loss
+
+    def get_ctrl_from_human(self, human, robot, device):
+        with torch.no_grad():
+            inp=torch.tensor([0],dtype=torch.float).to(device)
+            _, A, B, K =self.decoder_sim(torch.zeros(self.latent_dim,dtype=torch.float).to(device),inp)
+            running_loss=[0.,0.,0.]
+        
+            self.optimizer.zero_grad()
+            x = robot[0].to(device) 
+            y = human[1].to(device)  
+
+            # encode x to get the mu and variance parameters
+            _, zt0, _ = self.forward(x)
+            _, zt1, _ = self.forward(y)
+            const=B.T@B
+            u=(B.T@(zt1-A@zt0))/const[0]
+
+            # decoded
+            # x_hat, _, _, _ = self.decoder_sim(z,inp)
+        return u.item()
+
+    def get_ctrl(self, batch, device):
+        with torch.no_grad():
+            inp=torch.tensor([0],dtype=torch.float).to(device)
+            _, A, B, K =self.decoder_sim(torch.zeros(self.latent_dim,dtype=torch.float).to(device),inp)
+            running_loss=[0.,0.,0.]
+            for i in iter(batch):
+                self.optimizer.zero_grad()
+                x = i.to(device) 
+
+                # encode x to get the mu and variance parameters
+                x_encoded, z, std = self.forward(x)
+                zout=torch.empty_like(z,requires_grad=False)
+                zout=(A-B@K)@z
+
+                # decoded
+                x_hat, _, _, _ = self.decoder_sim(z,inp)
+        return x_hat.detach().numpy(), z.detach().numpy(), (-K@z).detach().numpy()
+
+    def project_forward(self, batch, device):
+        with torch.no_grad():
+            inp=torch.tensor([0],dtype=torch.float).to(device)
+            _, A, B, K =self.decoder_sim(torch.zeros(self.latent_dim,dtype=torch.float).to(device),inp)
+            running_loss=[0.,0.,0.]
+            z_state=[]
+            for i in iter(batch):
+                self.optimizer.zero_grad()
+                x = i.to(device) 
+                
+                # encode x to get the mu and variance parameters
+                x_encoded, z, std = self.forward(x)
+                for j in range(400):
+                    zout=(A-B@K)@z
+                    z=copy.copy(zout)
+                    z_state.append(z.detach().numpy())
+
+                # decoded
+                x_hat, _, _, _ = self.decoder_sim(z,inp)
+        return z_state
