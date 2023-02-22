@@ -7,7 +7,6 @@ import springmassdamper as smd
 import copy
 import time
 import torch
-import animation_test
 from scipy import signal
 
 def plot_latent_smooth(xinp,yinp):
