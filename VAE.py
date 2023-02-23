@@ -4,6 +4,8 @@ import torch
 from numpy.linalg import eig
 import numpy as np
 import copy
+from scipy import signal
+import matplotlib.pyplot as plt
 
 class VAE(nn.Module):
     def __init__(self, enc_out_dim=4, latent_dim=3, input_height=4,lr=1e-3,hidden_layers=128):
@@ -11,7 +13,7 @@ class VAE(nn.Module):
         self.lr=lr
         self.count=0
         self.kl_weight=1.0
-        self.lin_weight=1.0
+        self.lin_weight=10.0
         self.flatten = nn.Flatten()
         self.latent_dim=latent_dim
         self.enc_out_dim=enc_out_dim
@@ -79,6 +81,8 @@ class VAE(nn.Module):
         xhat= self.decoder0(z)
         lin=self.decodersim1(inp)
         A=torch.reshape(lin[:self.latent_dim**2],(self.latent_dim,self.latent_dim))
+        # B=torch.reshape(lin[self.latent_dim**2:2*self.latent_dim**2],(self.latent_dim,1))        
+        # K=torch.reshape(lin[2*self.latent_dim**2:],(1,self.latent_dim))            
         B=torch.reshape(lin[self.latent_dim**2:self.latent_dim**2+self.latent_dim],(self.latent_dim,1))        
         K=torch.reshape(lin[self.latent_dim**2+self.latent_dim:],(1,self.latent_dim))    
         return xhat, A, B, K
@@ -169,14 +173,17 @@ class VAE(nn.Module):
                 x = i[0].to(device)
                 y = i[1].to(device)   
                 # encode x to get the mu and variance parameters
-                x_encoded, mu, std = self.forward(x[:,:self.enc_out_dim])
+                x_encoded, z, std = self.forward(x[:,:self.enc_out_dim])
+                x_hat, A, B = self.decoder(z,inp)
+                
+                y_encoded, zt1, stdy = self.forward(y[:,:self.enc_out_dim])
 
-                q=torch.distributions.Normal(mu,std)
-                z=q.rsample()
-
+                zout=torch.empty_like(z,requires_grad=False)
+                for j in range(zout.size()[0]):
+                    zout[j,:]=A@z[j,:]#+B*x[j,-1]
                 # decoded
-                x_hat, A, B = self.decoder(mu,inp)
-        return x_hat.detach().numpy(), z.detach().numpy(), x.detach().numpy()
+                
+        return x_hat.detach().numpy(), z.detach().numpy(), x.detach().numpy(), zout.detach().numpy(), zt1.detach().numpy()
 
     def training_sim(self, batch,device):
         running_loss=[0.,0.,0.]
@@ -187,30 +194,31 @@ class VAE(nn.Module):
 
         for i in iter(batch):
             self.optimizer.zero_grad()
+            
             x = i[0].to(device)
             y = i[1].to(device)            
+            with torch.no_grad():
+                # encode x to get the mu and variance parameters
+                x_encoded, mu, std = self.forward(x[:,:-1])
 
-            # encode x to get the mu and variance parameters
-            x_encoded, mu, std = self.forward(x[:,:-1])
-
-            q=torch.distributions.Normal(mu,std)
-            z=q.rsample()
+                q=torch.distributions.Normal(mu,std)
+                z=q.rsample()
+                y_encoded, muy, stdy = self.forward(y[:,:-1])
+                qy=torch.distributions.Normal(muy,stdy)
+                ztp1=qy.rsample()  
 
             # decoded
             x_hat, A, B, K = self.decoder_sim(z,inp)
-
-            y_encoded, muy, stdy = self.forward(y[:,:-1])
-            qy=torch.distributions.Normal(muy,stdy)
-            ztp1=qy.rsample()  
 
             ## Calculate the z_(t+1) estimate from linearized model ##
             zout=torch.empty_like(z,requires_grad=False)
             for j in range(zout.size()[0]):
                 zout[j,:]=(A-B@K)@z[j,:]#+B*x[j,-1]
             # eig_loss=F.mse_loss(torch.linalg.eig(A-B@K)[1].real,torch.linalg.eig(A_human)[1].real)*1.0+F.mse_loss(torch.linalg.eig(A-B@K)[1].imag,torch.linalg.eig(A_human)[1].imag)*1.0
+            
             ## Calculate the loss ##
-            lin_loss=F.mse_loss(zout,ztp1)*1.0
-            ctrl_loss=F.mse_loss(-(K@z.T).flatten(),x[:,-1])
+            lin_loss=F.mse_loss(zout,ztp1)*10.
+            ctrl_loss=F.mse_loss(-(K@z.T).flatten(),x[:,-1])*10
             elbo=ctrl_loss+lin_loss
             # elbo=(kl+recon_loss).mean()+lin_loss
 
@@ -233,17 +241,17 @@ class VAE(nn.Module):
         
             self.optimizer.zero_grad()
             x = robot[0].to(device) 
-            y = human[1].to(device)  
+            zt1 = torch.tensor(human,dtype=torch.float)
 
             # encode x to get the mu and variance parameters
             _, zt0, _ = self.forward(x)
-            _, zt1, _ = self.forward(y)
+            # _, zt1, _ = self.forward(y)
             const=B.T@B
             u=(B.T@(zt1-A@zt0))/const[0]
 
             # decoded
             # x_hat, _, _, _ = self.decoder_sim(z,inp)
-        return u.item()
+        return u.item(), zt0.detach().numpy()
 
     def get_ctrl(self, batch, device):
         with torch.no_grad():
@@ -261,7 +269,7 @@ class VAE(nn.Module):
 
                 # decoded
                 x_hat, _, _, _ = self.decoder_sim(z,inp)
-        return x_hat.detach().numpy(), z.detach().numpy(), (-K@z).detach().numpy()
+        return x_hat.detach().numpy(), z.detach().numpy(), (-K@z).detach().numpy().item()
 
     def project_forward(self, batch, device):
         with torch.no_grad():
@@ -283,3 +291,15 @@ class VAE(nn.Module):
                 # decoded
                 x_hat, _, _, _ = self.decoder_sim(z,inp)
         return z_state
+
+
+
+    def plot_latent_smooth(self,xinp,yinp,fc=1.):
+        fs=1/0.01
+          
+        w = fc / (fs / 2) # Normalize the frequency
+        b, a = signal.butter(5, w, 'low')
+        output = signal.filtfilt(b, a, xinp)
+        output2 = signal.filtfilt(b, a, yinp)
+
+        return np.array([output,output2])
