@@ -6,9 +6,10 @@ import numpy as np
 import copy
 from scipy import signal
 import matplotlib.pyplot as plt
+import control 
 
 class VAE(nn.Module):
-    def __init__(self, enc_out_dim=4, latent_dim=3, input_height=4,lr=1e-3,hidden_layers=128):
+    def __init__(self, enc_out_dim=4, latent_dim=3, input_height=4,lr=1e-2,hidden_layers=128):
         super(VAE, self).__init__()
         self.lr=lr
         self.count=0
@@ -49,7 +50,10 @@ class VAE(nn.Module):
             nn.Linear(1, latent_dim**2+2*latent_dim),
             # nn.Tanh(),#ReLU(),
         )
-
+        self.decodersim2= nn.Sequential(
+            nn.Linear(1, 2*latent_dim),
+            # nn.Tanh(),#ReLU(),
+        )
         # for the gaussian likelihood
         self.log_scale = nn.Parameter(torch.Tensor([0.0]))
         self.optimizer=self.configure_optimizers(lr=lr)
@@ -86,6 +90,16 @@ class VAE(nn.Module):
         B=torch.reshape(lin[self.latent_dim**2:self.latent_dim**2+self.latent_dim],(self.latent_dim,1))        
         K=torch.reshape(lin[self.latent_dim**2+self.latent_dim:],(1,self.latent_dim))    
         return xhat, A, B, K
+
+    def decoder_sim_ctrl(self,inp):
+
+        lin=self.decodersim2(inp)
+
+        # B=torch.reshape(lin[self.latent_dim**2:2*self.latent_dim**2],(self.latent_dim,1))        
+        # K=torch.reshape(lin[2*self.latent_dim**2:],(1,self.latent_dim))            
+        B=torch.reshape(lin[:self.latent_dim],(self.latent_dim,1))        
+        K=torch.reshape(lin[self.latent_dim:],(1,self.latent_dim))    
+        return B, K
 
     def configure_optimizers(self,lr=1e-4):
         return torch.optim.Adam(self.parameters(), lr=lr)
@@ -164,7 +178,7 @@ class VAE(nn.Module):
         # self.scheduler.step()
         return running_loss
 
-    def test(self, batch,device):
+    def test(self, batch, device):
         with torch.no_grad():
             inp=torch.tensor([0],dtype=torch.float).to(device)
             running_loss=[0.,0.,0.]
@@ -184,6 +198,30 @@ class VAE(nn.Module):
                 # decoded
                 
         return x_hat.detach().numpy(), z.detach().numpy(), x.detach().numpy(), zout.detach().numpy(), zt1.detach().numpy()
+
+    def test_sim(self, batch,device):
+        with torch.no_grad():
+            inp=torch.tensor([0],dtype=torch.float).to(device)
+            
+            running_loss=[0.,0.,0.]
+            for i in iter(batch):
+                self.optimizer.zero_grad()
+                x = i[0].to(device)
+                y = i[1].to(device)   
+                # encode x to get the mu and variance parameters
+                x_encoded, z, std = self.forward(x[:,:self.enc_out_dim])
+                x_hat, A, B, K =self.decoder_sim(z,inp)
+                
+                y_encoded, zt1, stdy = self.forward(y[:,:self.enc_out_dim])
+
+                zout=torch.empty_like(z,requires_grad=False)
+                u=[]
+                for j in range(zout.size()[0]):
+                    zout[j,:]=A@z[j,:]+(B*x[j,-1]).flatten()#(A-B@K)@z[j,:]#+B*x[j,-1]
+                    u.append(-(K@z[j,:]).detach().numpy().item())
+                # decoded
+                
+        return x_hat.detach().numpy(), z.detach().numpy(), x.detach().numpy(), zout.detach().numpy(), zt1.detach().numpy(), np.array(u)
 
     def training_sim(self, batch,device):
         running_loss=[0.,0.,0.]
@@ -213,20 +251,20 @@ class VAE(nn.Module):
             ## Calculate the z_(t+1) estimate from linearized model ##
             zout=torch.empty_like(z,requires_grad=False)
             for j in range(zout.size()[0]):
-                zout[j,:]=(A-B@K)@z[j,:]#+B*x[j,-1]
+                zout[j,:]=A@z[j,:]+(B*x[j,-1]).flatten()
             # eig_loss=F.mse_loss(torch.linalg.eig(A-B@K)[1].real,torch.linalg.eig(A_human)[1].real)*1.0+F.mse_loss(torch.linalg.eig(A-B@K)[1].imag,torch.linalg.eig(A_human)[1].imag)*1.0
             
             ## Calculate the loss ##
-            lin_loss=F.mse_loss(zout,ztp1)*10.
-            ctrl_loss=F.mse_loss(-(K@z.T).flatten(),x[:,-1])*10
-            elbo=ctrl_loss+lin_loss
+            lin_loss=F.mse_loss(zout,ztp1)*1.
+            # ctrl_loss=F.mse_loss(-(K@z.T).flatten(),x[:,-1])*10.
+            elbo=lin_loss
             # elbo=(kl+recon_loss).mean()+lin_loss
 
             elbo.backward()
 
             self.optimizer.step()
-            running_loss[0] += ctrl_loss.item()/len(zout)#np.exp(recon_loss.mean().item()/len(zout))
-            running_loss[1] += lin_loss.item()/len(zout)#/len(zout)
+            # running_loss[0] += ctrl_loss.item()/len(zout)#np.exp(recon_loss.mean().item()/len(zout))
+            running_loss[0] += lin_loss.item()/len(zout)
             # running_loss[2] += lin_loss.item()#/len(zout)
             # lin_ap.append(lin_loss.item())
         self.count+=1
@@ -269,7 +307,30 @@ class VAE(nn.Module):
 
                 # decoded
                 x_hat, _, _, _ = self.decoder_sim(z,inp)
-        return x_hat.detach().numpy(), z.detach().numpy(), (-K@z).detach().numpy().item()
+        return x_hat.detach().numpy(), z.detach().numpy(), (-K@z.T).detach().numpy().item()
+
+    def get_ctrl_LQR(self, batch, device):
+        with torch.no_grad():
+            inp=torch.tensor([0],dtype=torch.float).to(device)
+            _, A, B, K =self.decoder_sim(torch.zeros(self.latent_dim,dtype=torch.float).to(device),inp)
+
+            R = 2.0*np.ones(1)#np.eye(3)
+            Q = np.eye(3)
+            K, _, _ = control.dlqr(A,B,Q,R)
+            running_loss=[0.,0.,0.]
+            for i in iter(batch):
+                self.optimizer.zero_grad()
+                x = i.to(device) 
+
+                # encode x to get the mu and variance parameters
+                x_encoded, z, std = self.forward(x[:4])
+                u = -K@z.T.detach().numpy()
+                # zout=torch.empty_like(z,requires_grad=False)
+                # zout=(A-B@K)@z
+
+                # # decoded
+                # x_hat, _, _, _ = self.decoder_sim(z,inp)
+        return u[0]
 
     def project_forward(self, batch, device):
         with torch.no_grad():
@@ -291,8 +352,6 @@ class VAE(nn.Module):
                 # decoded
                 x_hat, _, _, _ = self.decoder_sim(z,inp)
         return z_state
-
-
 
     def plot_latent_smooth(self,xinp,yinp,fc=1.):
         fs=1/0.01

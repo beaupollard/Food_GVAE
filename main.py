@@ -33,14 +33,14 @@ BS=2048*8    # Batch size for training
 # d1, sim_length, _, _=smd.run_singlemass_sim(run_nums=30,out_data=3,num_repeats=1)   # run simulation of single mass system
 
 ## Load previously generated simulation data ##
-d1=torch.load('data/data_exp_osc_02142023.pt')
+d1=torch.load('./data_exp_osc_02142023.pt')
 
 train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=True)
 
 model=VAE(enc_out_dim=len(d1[0][0]),input_height=len(d1[0][0]))
 device = torch.device("cpu")    # Save the model to the CPU
 model.to(device)
-model.load_state_dict(torch.load("./models/current_modelrobot"))     # Load a previously trained model
+# model.load_state_dict(torch.load("./models/current_modelrobot"))     # Load a previously trained model
 # model2=VAE(enc_out_dim=len(d1[0][0]),input_height=len(d1[0][0]))
 # device2 = torch.device("cpu")    # Save the model to the CPU
 # model2.to(device)
@@ -49,7 +49,7 @@ count=0
 ## Training loop ##
 for i in range(4000):
     loss=model.training_step(train,device)
-    if count==100:
+    if count==200:
         # model.kl_weight=1.
         # model.lin_weight=10.0        
         model.scheduler.step()
@@ -57,7 +57,7 @@ for i in range(4000):
     count+=1
     print(i, loss)
 
-torch.save(model.state_dict(), 'current_model9')    # Save the current model
+torch.save(model.state_dict(), './models/current_model0')    # Save the current model
 
 
 ## Testing loop ##

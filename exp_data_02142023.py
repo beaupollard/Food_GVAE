@@ -2,6 +2,14 @@ import numpy as np
 import torch
 import os
 import matplotlib.pyplot as plt
+from scipy import signal
+
+def filter(inp):
+    fs=1/0.1
+    fc = 1.  # Cut-off frequency of the filter
+    w = fc / (fs / 2) # Normalize the frequency
+    b, a = signal.butter(5, w, 'low')
+    return np.array(signal.filtfilt(b, a, inp))
 
 def read_inputs():
     names=['mass1.txt','mass2.txt','penx.txt','peny.txt']
@@ -35,26 +43,48 @@ def read_inputs():
     #     vel.append(data2[index0[i]+2000:index1[i]+2000,i])
         # plt.plot(np.array(data_out)[:2000,i])
         # plt.show()
-
-
-
-    data=[]
-    data_index=[0]
-    count=0
-    divisor=-250.
+    divisor=-1000.
+    velo=np.zeros((30,4,int(len(data2)/4)-1))
+    velosmooth=np.zeros((30,4,int(len(data2)/4)-1))
     for i in range(len(data_out[0])):
         m=[]
             # m.append(max(abs(data_out[:,i,h])))
-        for j in range(multiple-1):
-            # x=torch.tensor([data2[j,i]/-1.,data2[j+multiple,i]/-1.,(data2[j+2*multiple,i])/-1.,data2[j+3*multiple,i]/-1.],dtype=torch.float)
-            # y=torch.tensor([data2[j+1,i]/-1.,data2[j+multiple+1,i]/-1.,(data2[j+2*multiple+1,i])/-1.,data2[j+3*multiple+1,i]/-1.],dtype=torch.float)                     
-            x=torch.tensor([data2[j,i]/divisor,data2[j+multiple,i]/divisor,(data2[j+2*multiple,i])/divisor,data2[j+3*multiple,i]/-divisor],dtype=torch.float)
-            y=torch.tensor([data2[j+1,i]/divisor,data2[j+multiple+1,i]/divisor,(data2[j+2*multiple+1,i])/divisor,data2[j+3*multiple+1,i]/-divisor],dtype=torch.float)            
-            # x=torch.tensor([data2[j,i],data2[j+multiple,i],data2[j+2*multiple,i],data2[j+3*multiple,i]],dtype=torch.float)
-            # y=torch.tensor([data2[j+1,i],data2[j+multiple+1,i],data2[j+2*multiple+1,i],data2[j+3*multiple+1,i]],dtype=torch.float)
+        for j in range(len(velo[0,0,:])): 
+            velo[i,:,j]=np.array([(data2[j+1,i]-data2[j,i])/(1/100*divisor),(data2[j+multiple+1,i]-data2[j+multiple,i])/(1/100*divisor),(data2[j+multiple*2+1,i]-data2[j+multiple*2,i])/(1/100*divisor),(data2[j+3*multiple+1,i]-data2[j+3*multiple,i])/(1/100*divisor)])
+        for h in range(len(velo[0,:,0])):
+            velosmooth[i,h,:]= filter(velo[i,h,:])
+    data=[]
+    data_index=[0]
+    count=0
+    for i in range(len(velosmooth[:,0,0])):
+        m=[]
+            # m.append(max(abs(data_out[:,i,h])))
+        for j in range(len(velosmooth[0,0,:])-1):
+            x=torch.tensor([velosmooth[i,0,j],velosmooth[i,1,j],velosmooth[i,2,j],velosmooth[i,3,j]],dtype=torch.float)
+            y=torch.tensor([velosmooth[i,0,j+1],velosmooth[i,1,j+1],velosmooth[i,2,j+1],velosmooth[i,3,j+1]],dtype=torch.float)
+
             data.append([x,y])
             count+=1
-        data_index.append(count)
+        data_index.append(count)    
+    # for i in range(len(data_out[0])):
+    #     m=[]
+    #         # m.append(max(abs(data_out[:,i,h])))
+    #     for j in range(multiple-2):
+    #         # x=torch.tensor([data2[j,i]/-1.,data2[j+multiple,i]/-1.,(data2[j+2*multiple,i])/-1.,data2[j+3*multiple,i]/-1.],dtype=torch.float)
+    #         # y=torch.tensor([data2[j+1,i]/-1.,data2[j+multiple+1,i]/-1.,(data2[j+2*multiple+1,i])/-1.,data2[j+3*multiple+1,i]/-1.],dtype=torch.float) 
+    #         # vel=np.zeros((4,2))
+
+    #         # for i in range(4):
+    #         #     vel[i,0]=data2[j,i]/divisor
+    #         x=torch.tensor([(data2[j+1,i]-data2[j,i])/(1/100*divisor),(data2[j+multiple+1,i]-data2[j+multiple,i])/(1/100*divisor),(data2[j+multiple*2+1,i]-data2[j+multiple*2,i])/(1/100*divisor),(data2[j+3*multiple+1,i]-data2[j+3*multiple,i])/(1/100*divisor)],dtype=torch.float)
+    #         y=torch.tensor([(data2[j+2,i]-data2[j+1,i])/(1/100*divisor),(data2[j+multiple+2,i]-data2[j+multiple+1,i])/(1/100*divisor),(data2[j+multiple*2+2,i]-data2[j+multiple*2+1,i])/(1/100*divisor),(data2[j+3*multiple+2,i]-data2[j+3*multiple+1,i])/(1/100*divisor)],dtype=torch.float)               
+    #         # x=torch.tensor([data2[j,i]/divisor,data2[j+multiple,i]/divisor,(data2[j+2*multiple,i])/divisor,data2[j+3*multiple,i]/-divisor],dtype=torch.float)
+    #         # y=torch.tensor([data2[j+1,i]/divisor,data2[j+multiple+1,i]/divisor,(data2[j+2*multiple+1,i])/divisor,data2[j+3*multiple+1,i]/-divisor],dtype=torch.float)            
+    #         # x=torch.tensor([data2[j,i],data2[j+multiple,i],data2[j+2*multiple,i],data2[j+3*multiple,i]],dtype=torch.float)
+    #         # y=torch.tensor([data2[j+1,i],data2[j+multiple+1,i],data2[j+2*multiple+1,i],data2[j+3*multiple+1,i]],dtype=torch.float)
+    #         data.append([x,y])
+    #         count+=1
+    #     data_index.append(count)
         
 
     torch.save(data,os.path.join('./',f'data_exp_osc_02142023.pt'))
