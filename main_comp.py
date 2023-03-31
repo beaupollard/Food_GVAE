@@ -35,8 +35,8 @@ BS=2048*4    # Batch size for training
 
 ## Load previously generated simulation data ##
 # exp=torch.load('data_exp_osc_02142023.pt')
-exp=torch.load('data/data_sim4.pt')
-sim=torch.load('data/data_exp_osc_02142023.pt')
+sim=torch.load('data/data_sim.pt')
+exp=torch.load('./data/data_exp_pos.pt')
 # rem_ind=[]
 # for i in range(len(exp)):
 #     if abs((exp[i][1][0]-exp[i][0][0]).item())>0.10:
@@ -49,18 +49,19 @@ sim=torch.load('data/data_exp_osc_02142023.pt')
 #     exp[i][1][:-1]=exp[i][1][:-1]/0.25
 # for i in range(len(sim)):
 #     sim[i][0][:-1]=sim[i][0][:-1]*0.25
-train=torch.utils.data.DataLoader(exp,batch_size=BS, shuffle=True)
+train=torch.utils.data.DataLoader(sim,batch_size=len(sim), shuffle=False)
 
-model=VAE(enc_out_dim=len(exp[0][0])-1,input_height=len(exp[0][0])-1)
+model=VAE(enc_out_dim=len(sim[0][0])-1,input_height=len(sim[0][0])-1)
 device = torch.device("cpu")    # Save the model to the CPU
 model.to(device)
-model.load_state_dict(torch.load("./models/current_model0"))     # Load a previously trained model
+# model.load_state_dict(torch.load("./models/current_model0"))     # Load a previously trained model
+model.load_state_dict(torch.load("./models/human_model_pos"))     # Load a previously trained model
 count=0
-model.decodersim1[0].bias.data.normal_(mean=0.,std=1.)
-model.decodersim1[0].weight.data.normal_(mean=0.,std=1.)
-test_exp=torch.utils.data.DataLoader(exp,batch_size=len(exp), shuffle=False)
+# model.decodersim1[0].bias.data.normal_(mean=0.,std=1.)
+# model.decodersim1[0].weight.data.normal_(mean=0.,std=1.)
 test_sim=torch.utils.data.DataLoader(sim,batch_size=len(sim), shuffle=False)
-xhat_sim, z_sim, x_sim, z_sim_tilde, z_sim_1, u = model.test_sim(test_exp,device)
+test_exp=torch.utils.data.DataLoader(exp,batch_size=len(exp), shuffle=False)
+xhat_sim, z_sim, x_sim, z_sim_tilde, z_sim_1, u = model.test_sim(test_sim,device)
 ## Training loop ##
 for i in range(10000):
     loss=model.training_sim(train,device)
@@ -70,12 +71,12 @@ for i in range(10000):
     count+=1
     print(i, loss)
 
-torch.save(model.state_dict(), './models/current_modelrobot5')    # Save the current model
+torch.save(model.state_dict(), './models/current_modelrobot6')    # Save the current model
 
 
 ## Testing loop ##
-test_exp=torch.utils.data.DataLoader(exp,batch_size=len(exp), shuffle=False)
 test_sim=torch.utils.data.DataLoader(sim,batch_size=len(sim), shuffle=False)
+test_exp=torch.utils.data.DataLoader(exp,batch_size=len(exp), shuffle=False)
 xhat_sim, z_sim, x_sim, z_sim_tilde, z_sim_1, u = model.test_sim(test_sim,device)
 xhat_exp, z_exp, x_exp, z_exp_tilde, z_exp_1 = model.test(test_exp,device)
 # sim_length=424

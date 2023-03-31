@@ -309,13 +309,14 @@ class VAE(nn.Module):
                 x_hat, _, _, _ = self.decoder_sim(z,inp)
         return x_hat.detach().numpy(), z.detach().numpy(), (-K@z.T).detach().numpy().item()
 
-    def get_ctrl_LQR(self, batch, device):
+    def get_ctrl_LQR(self, target, batch, device):
         with torch.no_grad():
+            _, z_human, _ = self.forward(target[0])
             inp=torch.tensor([0],dtype=torch.float).to(device)
             _, A, B, K =self.decoder_sim(torch.zeros(self.latent_dim,dtype=torch.float).to(device),inp)
-
-            R = 2.0*np.ones(1)#np.eye(3)
-            Q = np.eye(3)
+            const=B.T@B
+            R = 1.0*np.ones(1)#np.eye(3)
+            Q = 1.0*np.eye(3)
             K, _, _ = control.dlqr(A,B,Q,R)
             running_loss=[0.,0.,0.]
             for i in iter(batch):
@@ -324,13 +325,14 @@ class VAE(nn.Module):
 
                 # encode x to get the mu and variance parameters
                 x_encoded, z, std = self.forward(x[:4])
-                u = -K@z.T.detach().numpy()
+                # u = (B.T@(z_human-A@z)/const[0]).detach().numpy()
+                u = -K@((z_human-z).T.detach().numpy())
                 # zout=torch.empty_like(z,requires_grad=False)
                 # zout=(A-B@K)@z
 
                 # # decoded
                 # x_hat, _, _, _ = self.decoder_sim(z,inp)
-        return u[0]
+        return u[0].item(), np.linalg.norm((z_human-z).detach().numpy())
 
     def project_forward(self, batch, device):
         with torch.no_grad():
