@@ -13,9 +13,11 @@ BS=2048*8    # Batch size for training
 
 ## Load previously generated simulation data ##
 d1=torch.load('./data_swing.pt')
+d2=torch.load('./data_swing_val.pt')
 
 ## Setup data loader ##
 train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=True)
+test=torch.utils.data.DataLoader(d2,batch_size=len(d2), shuffle=False)
 
 ## Initialize the NN model ##
 model=VAE(enc_out_dim=len(d1[0][0])-1,input_height=len(d1[0][0])-1)
@@ -24,8 +26,9 @@ model=VAE(enc_out_dim=len(d1[0][0])-1,input_height=len(d1[0][0])-1)
 device = torch.device("cpu")    # Save the model to the CPU
 model.to(device)
 
+# model.load_state_dict(torch.load("./models/swing_up")) 
 count=0
-
+model.human_rollout(test,device)
 ## Training loop ##
 for i in range(10000):
     loss=model.training_human(train,device)
@@ -41,7 +44,6 @@ torch.save(model.state_dict(), './models/swing_up')    # Save the current model
 ## Testing loop ##
 model=VAE()
 
-test=torch.utils.data.DataLoader(d1,batch_size=len(d1), shuffle=False)
 xhat, z, x, ztilde, zdecode = model.test(test,device)
 
 sim_length=424

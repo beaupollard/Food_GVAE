@@ -7,18 +7,20 @@ import copy
 from scipy import signal
 import matplotlib.pyplot as plt
 import control 
+import random
 
 class VAE(nn.Module):
     def __init__(self, enc_out_dim=4, latent_dim=6, input_height=4,lr=1e-2,hidden_layers=128):
         super(VAE, self).__init__()
         self.lr=lr                  # learning rate
         self.count=0                # counter
-        self.kl_weight=10.0         # KL divergence weight
+        self.kl_weight=1.0         # KL divergence weight
         self.lin_weight=10.0        # linear transition approximation weight
-        self.recon_weight=100.0     # Reconstruction weight
+        self.recon_weight=10.0     # Reconstruction weight
         self.flatten = nn.Flatten() # Flatten array operation
         self.latent_dim=latent_dim  # Dimension of latent space
         self.enc_out_dim=enc_out_dim# Dimension of encoder output array
+        self.q_prior=torch.distributions.Normal(0,1.)
         
         ## First set of layers in encoder ##
         self.linear_relu_stack = nn.Sequential(
@@ -152,6 +154,15 @@ class VAE(nn.Module):
         log_pxz = dist.log_prob(x)
         return log_pxz.sum(dim=(1))
 
+    def kl_gauss(self, mu0, std0, mu1, std1):
+        '''Takes in the latent space distribution parameters (mu, stc) and the sampled latent state (z).
+        Outputs the KL divergence of the latent space distribution and the target distribution. If mu_prior
+        and std_prior are not specified then the distrubition is compared to a zero mean normal with 
+        standard deviation of one.'''
+        kl = 1/2*(2*torch.log(std1/std0)+(std0**2+(mu0-mu1)**2)/std1**2-1)
+        kl = kl.sum(-1)
+        return kl.mean()
+
     def kl_divergence(self, z, mu, std, mu_prior=[], std_prior=[]):
         '''Takes in the latent space distribution parameters (mu, stc) and the sampled latent state (z).
         Outputs the KL divergence of the latent space distribution and the target distribution. If mu_prior
@@ -180,8 +191,8 @@ class VAE(nn.Module):
         inp=torch.tensor([0],dtype=torch.float).to(device)
         for i in iter(batch):
             self.optimizer.zero_grad()
-            x = i[0].to(device) # x^t
-            y = i[1].to(device) # x^t+1        
+            x = i[0][:,:-1].to(device) # x^t
+            y = i[4][:,:-1].to(device) # x^t+1        
 
             # Encode state x to get the latent space mu and variance parameters
             mu, std = self.forward(x)
@@ -207,13 +218,15 @@ class VAE(nn.Module):
             muy, stdy = self.forward(y)
             qy=torch.distributions.Normal(muy,stdy)
             ztp1=qy.rsample()  
-            
+            qz=torch.distributions.Normal(zout,std)
             ## Calculate the loss ##
 
-            lin_loss=F.mse_loss(zout,ztp1)*self.lin_weight  # State transition matrix loss
-
+            lin_loss=F.mse_loss(zout,ztp1)*self.lin_weight # State transition matrix loss
+            # kl_test=self.kl_gauss(mu, std, muy, stdy)
+            # lin_loss=torch.distributions.kl.kl_divergence(qz, qy).mean()*self.lin_weight # State transition matrix loss
             recon_loss = -self.gaussian_likelihood(x_hat, self.log_scale, x[:,:])*self.recon_weight # recreation loss
-            kl = self.kl_divergence(z, mu, std)*self.kl_weight  # KL divergence
+            kl = torch.distributions.kl.kl_divergence(q, self.q_prior).mean() # self.kl_divergence(z, mu, std)*self.kl_weight  # KL divergence
+            # kl = self.kl_divergence(z, mu, std)*self.kl_weight  # KL divergence
             
             elbo=(kl+recon_loss).mean()+lin_loss # Sum the losses
 
@@ -320,14 +333,16 @@ class VAE(nn.Module):
                 u=[]
                 for j in range(zout.size()[0]):
                     zout[j,:]=A[j,:,:]@z[j,:]+(B[j,:]*x[j,-1]).flatten()
-                    u.append(-(K[j,:]@z[j,:]).detach().numpy().item())     
-
+                    u.append(-(K[j,:]@z[j,:]).detach().numpy().item())
+            
+            qz=torch.distributions.Normal(zout,std)
+            # lin_loss=torch.distributions.kl.kl_divergence(q, qy).mean()*self.lin_weight   # State transition matrix loss
             # eig_loss=F.mse_loss(torch.linalg.eig(A-B@K)[1].real,torch.linalg.eig(A_human)[1].real)*1.0+F.mse_loss(torch.linalg.eig(A-B@K)[1].imag,torch.linalg.eig(A_human)[1].imag)*1.0
-            kl_trans_loss=self.kl_divergence(zout, mu, std, mu_prior=muy, std_prior=stdy)
+            kl_trans_loss=lin_loss=torch.distributions.kl.kl_divergence(qz, qy).mean()#self.kl_divergence(zout, mu, std, mu_prior=muy, std_prior=stdy)
             ## Calculate the loss ##
-            lin_loss=F.mse_loss(zout,ztp1)*1.
+            # lin_loss=F.mse_loss(zout,ztp1)*1.
             # ctrl_loss=F.mse_loss(-(K@z.T).flatten(),x[:,-1])*1.
-            elbo=lin_loss+kl_trans_loss.mean()
+            elbo=kl_trans_loss.mean()
             # elbo=(kl+recon_loss).mean()+lin_loss
 
             elbo.backward()
@@ -410,3 +425,34 @@ class VAE(nn.Module):
             z, std = self.forward(x[:,:-1])
             _, A, B, _ =self.decoder_sim_LTI(z,0)
         return A, B
+    
+    def human_rollout(self,batch,device,idx=0,iters=100,LTI=True):
+        with torch.no_grad():
+            inp=torch.tensor([0],dtype=torch.float).to(device)
+            running_loss=[0.,0.,0.]
+            for i in iter(batch):
+                self.optimizer.zero_grad()
+                x = i[0][idx].to(device)
+                # encode x to get the mu and variance parameters
+                z, _ = self.forward(x[:self.enc_out_dim])
+                # decoded
+                if LTI==True:
+                    _, A, B = self.decoder_LTI(z,inp)
+                    zout=torch.empty((iters,self.enc_out_dim),requires_grad=False)
+                    zout[0,:]=z
+                    for j in range(iters-1):
+                        zout[j+1,:]=A@zout[j,:]
+                    x_hat, _, _ = self.decoder_LTI(zout,inp)
+                else:
+                    x_hat, A, B = self.decoder_LTV(z)
+                    zout=torch.empty_like(z,requires_grad=False)
+                    for j in range(zout.size()[0]):
+                        zout[j,:]=A[j,:,:]@z[j,:]
+                    x_hat, _, _ = self.decoder_LTV(zout,inp)
+                
+                for ii in range(6):
+                    plt.subplot(2, 3, ii+1)
+                    plt.plot(i[0][idx:idx+iters,ii])
+                    plt.plot(x_hat[:,ii])
+                plt.show()
+                
