@@ -52,7 +52,7 @@ xhat_sim, z_sim, x_sim, z_sim_tilde, z_sim_1, u = model.test_sim(test_sim,device
 ## Training loop ##
 for i in range(10000):
     loss=model.training_sim(train,device)
-    if count==500:
+    if count==100:
         model.scheduler.step()
         count=0
     count+=1

@@ -10,13 +10,13 @@ import control
 import random
 
 class VAE(nn.Module):
-    def __init__(self, enc_out_dim=4, latent_dim=6, input_height=4,lr=1e-2,hidden_layers=128):
+    def __init__(self, enc_out_dim=4, latent_dim=3, input_height=4,lr=1e-2,hidden_layers=128):
         super(VAE, self).__init__()
         self.lr=lr                  # learning rate
         self.count=0                # counter
         self.kl_weight=1.0         # KL divergence weight
-        self.lin_weight=10.0        # linear transition approximation weight
-        self.recon_weight=10.0     # Reconstruction weight
+        self.lin_weight=1.0        # linear transition approximation weight
+        self.recon_weight=1.0     # Reconstruction weight
         self.flatten = nn.Flatten() # Flatten array operation
         self.latent_dim=latent_dim  # Dimension of latent space
         self.enc_out_dim=enc_out_dim# Dimension of encoder output array
@@ -141,7 +141,8 @@ class VAE(nn.Module):
     def configure_optimizers(self,lr=1e-4):
         '''Configures the optimizer
         Input: learning rate'''
-        return torch.optim.Adam(self.parameters(), lr=lr)
+        # return torch.optim.Adam(self.parameters(), lr=lr)
+        return torch.optim.SGD(self.parameters(), lr=lr, momentum=0.9)
 
     def gaussian_likelihood(self, x_hat, logscale, x):
         '''Takes in the decoded latent space distribution mean \hat{x}t and the current state xt. It outputs the 
@@ -190,9 +191,10 @@ class VAE(nn.Module):
         
         inp=torch.tensor([0],dtype=torch.float).to(device)
         for i in iter(batch):
+            y_ind=random.randint(1,4)
             self.optimizer.zero_grad()
             x = i[0][:,:-1].to(device) # x^t
-            y = i[4][:,:-1].to(device) # x^t+1        
+            y = i[y_ind][:,:-1].to(device) # x^t+1        
 
             # Encode state x to get the latent space mu and variance parameters
             mu, std = self.forward(x)
@@ -204,36 +206,40 @@ class VAE(nn.Module):
             # decoded
             if LTI==True:
                 x_hat, A, B = self.decoder_LTI(z,inp)
+                for jj in range(y_ind-1):
+                    A=A@A
                 ## Calculate the z_(t+1) estimate from linearized model ##
                 zout=torch.empty_like(z,requires_grad=False)
                 for j in range(zout.size()[0]):
-                    zout[j,:]=A@z[j,:]
+                    zout[j,:]=(A)@z[j,:]
             else:
                 x_hat, A, B = self.decoder_LTV(z)
                 ## Calculate the z_(t+1) estimate from linearized model ##
                 zout=torch.empty_like(z,requires_grad=False)
                 for j in range(zout.size()[0]):
-                    zout[j,:]=A[j,:,:]@z[j,:]
+                    zout[j,:]=(A[j,:,:])@z[j,:]
 
             muy, stdy = self.forward(y)
             qy=torch.distributions.Normal(muy,stdy)
             ztp1=qy.rsample()  
             qz=torch.distributions.Normal(zout,std)
             ## Calculate the loss ##
-
-            lin_loss=F.mse_loss(zout,ztp1)*self.lin_weight # State transition matrix loss
+            x_hat2, _, _ = self.decoder_LTI(zout,inp)
+            # lin_loss=F.mse_loss(zout,ztp1)*self.lin_weight # State transition matrix loss
             # kl_test=self.kl_gauss(mu, std, muy, stdy)
-            # lin_loss=torch.distributions.kl.kl_divergence(qz, qy).mean()*self.lin_weight # State transition matrix loss
-            recon_loss = -self.gaussian_likelihood(x_hat, self.log_scale, x[:,:])*self.recon_weight # recreation loss
+            lin_loss=torch.distributions.kl.kl_divergence(qz, qy).mean()*self.lin_weight # State transition matrix loss
+            recon_loss = -(self.gaussian_likelihood(x_hat, self.log_scale, x[:,:])*self.recon_weight).mean() # recreation loss
+            recon_loss -= (self.gaussian_likelihood(x_hat2, self.log_scale, y[:,:])*self.recon_weight).mean()
             kl = torch.distributions.kl.kl_divergence(q, self.q_prior).mean() # self.kl_divergence(z, mu, std)*self.kl_weight  # KL divergence
             # kl = self.kl_divergence(z, mu, std)*self.kl_weight  # KL divergence
             
-            elbo=(kl+recon_loss).mean()+lin_loss # Sum the losses
+            elbo=(kl+recon_loss)+lin_loss # Sum the losses
 
             elbo.backward() # Propogate losses backwards
-
+            # torch.nn.utils.clip_grad_norm_(self., max_norm,
+            torch.nn.utils.clip_grad_norm_(self.parameters(), 1.)
             self.optimizer.step()
-            running_loss[0] += np.exp(recon_loss.mean().item()/len(zout))
+            running_loss[0] += np.exp(recon_loss.mean().item())/len(zout)
             running_loss[1] += kl.mean().item()/len(zout)
             running_loss[2] += lin_loss.item()/len(zout)
             lin_ap.append(lin_loss.item())
@@ -242,6 +248,7 @@ class VAE(nn.Module):
         return running_loss
 
     def test_human(self, batch, device, LTI=True):
+        running_loss=[0.,0.,0.]
         with torch.no_grad():
             inp=torch.tensor([0],dtype=torch.float).to(device)
             running_loss=[0.,0.,0.]
@@ -251,12 +258,19 @@ class VAE(nn.Module):
                 y = i[1].to(device)  
                 # encode x to get the mu and variance parameters
                 z, std = self.forward(x[:,:self.enc_out_dim])
+                q=torch.distributions.Normal(z,std)
                 # decoded
                 if LTI==True:
-                    x_hat, A, B = self.decoder_LTI(z,inp)
+                    x_hat, A, B, K =self.decoder_sim_LTI(z,inp)
                     zout=torch.empty_like(z,requires_grad=False)
+                    u=[]
                     for j in range(zout.size()[0]):
-                        zout[j,:]=A@z[j,:]
+                        zout[j,:]=A@z[j,:]+(B*x[j,-1]).flatten()
+                        u.append(-(K@z[j,:]).detach().numpy().item())                      
+                    # x_hat, A, B = self.decoder_LTI(z,inp)
+                    # zout=torch.empty_like(z,requires_grad=False)
+                    # for j in range(zout.size()[0]):
+                    #     zout[j,:]=A@z[j,:]
                 else:
                     x_hat, A, B = self.decoder_LTV(z)
                     zout=torch.empty_like(z,requires_grad=False)
@@ -264,7 +278,15 @@ class VAE(nn.Module):
                         zout[j,:]=A[j,:,:]@z[j,:]
                 zt1, stdy = self.forward(y[:,:self.enc_out_dim])
                 
-        return x_hat.detach().numpy(), z.detach().numpy(), x.detach().numpy(), zout.detach().numpy(), zt1.detach().numpy()
+                lin_loss=F.mse_loss(zout,zt1)*self.lin_weight # State transition matrix loss
+                # kl_test=self.kl_gauss(mu, std, muy, stdy)
+                # lin_loss=torch.distributions.kl.kl_divergence(qz, qy).mean()*self.lin_weight # State transition matrix loss
+                recon_loss = -(self.gaussian_likelihood(x_hat, self.log_scale, x[:,:-1])*self.recon_weight).mean() # recreation loss
+                kl = torch.distributions.kl.kl_divergence(q, self.q_prior).mean()  
+                running_loss[0] += np.exp(recon_loss.mean().item())/len(zout)
+                running_loss[1] += kl.mean().item()/len(zout)
+                running_loss[2] += lin_loss.item()/len(zout)             
+        return x_hat.detach().numpy(), z.detach().numpy(), x.detach().numpy(), zout.detach().numpy(), zt1.detach().numpy(), running_loss
 
     def test_sim(self, batch,device,LTI=True):
         with torch.no_grad():
@@ -338,7 +360,7 @@ class VAE(nn.Module):
             qz=torch.distributions.Normal(zout,std)
             # lin_loss=torch.distributions.kl.kl_divergence(q, qy).mean()*self.lin_weight   # State transition matrix loss
             # eig_loss=F.mse_loss(torch.linalg.eig(A-B@K)[1].real,torch.linalg.eig(A_human)[1].real)*1.0+F.mse_loss(torch.linalg.eig(A-B@K)[1].imag,torch.linalg.eig(A_human)[1].imag)*1.0
-            kl_trans_loss=lin_loss=torch.distributions.kl.kl_divergence(qz, qy).mean()#self.kl_divergence(zout, mu, std, mu_prior=muy, std_prior=stdy)
+            kl_trans_loss=torch.distributions.kl.kl_divergence(qz, qy).mean()#self.kl_divergence(zout, mu, std, mu_prior=muy, std_prior=stdy)
             ## Calculate the loss ##
             # lin_loss=F.mse_loss(zout,ztp1)*1.
             # ctrl_loss=F.mse_loss(-(K@z.T).flatten(),x[:,-1])*1.
@@ -349,8 +371,8 @@ class VAE(nn.Module):
 
             self.optimizer.step()
             # running_loss[0] += ctrl_loss.item()/len(zout)#np.exp(recon_loss.mean().item()/len(zout))
-            running_loss[0] += lin_loss.item()/len(zout)
-            running_loss[1] += (kl_trans_loss.mean()).item()/len(zout)
+            # running_loss[0] += lin_loss.item()/len(zout)
+            running_loss[0] += (kl_trans_loss.mean()).item()/len(zout)
             # running_loss[2] += ctrl_loss.item()/len(zout)
             # running_loss[2] += lin_loss.item()#/len(zout)
             # lin_ap.append(lin_loss.item())
@@ -382,31 +404,32 @@ class VAE(nn.Module):
             inp=torch.tensor([0],dtype=torch.float).to(device)
 
             R = 1.0*np.ones(1)#np.eye(3)
-            Q = 0.1*np.eye(self.latent_dim)
+            Q = 10.*np.eye(self.latent_dim)
             
 
             running_loss=[0.,0.,0.]
             
-            x = batch[0]
-            z, std = self.forward(torch.tensor(x[:-1]))
+            x = batch
+            z, std = self.forward(x[:self.enc_out_dim])
 
             zrec=[z.detach().numpy()]
             urec=[]
-            for i in range(999):
-                if LTI==True:
-                    x_hat, A, B, _ = self.decoder_sim_LTI(z.reshape((1,self.latent_dim)).type(torch.float),inp)
-                else:
-                    x_hat, A, B, _ = self.decoder_sim_LTV(z.reshape((1,self.latent_dim)).type(torch.float))
+            # for i in range(999):
+            if LTI==True:
+                x_hat, A, B, _ = self.decoder_sim_LTI(z.reshape((1,self.latent_dim)).type(torch.float),inp)
+                K, _, _ = control.dlqr(A,B,Q,R)
+            else:
+                x_hat, A, B, _ = self.decoder_sim_LTV(z.reshape((1,self.latent_dim)).type(torch.float))
                 K, _, _ = control.dlqr(A[0,:,:],B[0,:,:],Q,R)
-                u=-K@(z_tracked[i]-z.detach().numpy())
-                if abs(u)>30:
-                    u=30*u/abs(u)
-                zrec.append((A[0,:,:]@z.type(torch.float)+B[0,:,:]@u).detach().numpy())
-                z=A[0,:,:]@z.type(torch.float)+B[0,:,:]@u
-                # zrec.append(z.detach().numpy())
-                urec.append(u)
+            u=-K@(z_tracked-z.detach().numpy())
+            if abs(u)>30:
+                u=30*u/abs(u)
+            # zrec.append((A[0,:,:]@z.type(torch.float)+B[0,:,:]@u).detach().numpy())
+            # z=A[0,:,:]@z.type(torch.float)+B[0,:,:]@u
+            # zrec.append(z.detach().numpy())
+            # urec.append(u)
 
-        return zrec
+        return u
 
     def plot_latent_smooth(self,xinp,yinp,fc=1.,fs=100.):
         '''Takes in x and y data, the cutoff frequency (fc) and the measurement frequency (fs) and 
@@ -438,21 +461,29 @@ class VAE(nn.Module):
                 # decoded
                 if LTI==True:
                     _, A, B = self.decoder_LTI(z,inp)
-                    zout=torch.empty((iters,self.enc_out_dim),requires_grad=False)
-                    zout[0,:]=z
+                    ztilde=torch.empty((iters,self.latent_dim),requires_grad=False)
+                    # zout=torch.empty((iters,self.enc_out_dim),requires_grad=False)
+                    ztilde[0,:]=z
+                    # zout[0,:]=z
                     for j in range(iters-1):
-                        zout[j+1,:]=A@zout[j,:]
-                    x_hat, _, _ = self.decoder_LTI(zout,inp)
+                        ztilde[j+1,:]=A@ztilde[j,:]
+                        
+                    x_hat, _, _ = self.decoder_LTI(ztilde,inp)
                 else:
                     x_hat, A, B = self.decoder_LTV(z)
                     zout=torch.empty_like(z,requires_grad=False)
                     for j in range(zout.size()[0]):
                         zout[j,:]=A[j,:,:]@z[j,:]
                     x_hat, _, _ = self.decoder_LTV(zout,inp)
-                
+                zout,_=self.forward(i[0][idx:idx+iters,:-1].to(device))
+                # for ii in range(6):
+                #     plt.subplot(2, 3, ii+1)
+                #     plt.plot(i[0][idx:idx+iters,ii])
+                #     plt.plot(x_hat[:,ii])
+                # plt.show()
                 for ii in range(6):
                     plt.subplot(2, 3, ii+1)
-                    plt.plot(i[0][idx:idx+iters,ii])
-                    plt.plot(x_hat[:,ii])
+                    plt.plot(zout[:,ii])
+                    plt.plot(ztilde[:,ii])
                 plt.show()
                 
