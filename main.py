@@ -9,7 +9,7 @@ import time
 import torch
 from scipy import signal
 
-BS=2048*2    # Batch size for training
+BS=int(512)    # Batch size for training
 
 ## Load previously generated simulation data ##
 d1=torch.load('./data_swing.pt')
@@ -33,7 +33,7 @@ count=0
 loss_test_rec=[]
 loss_train_rec=[]
 ## Training loop ##
-for i in range(500):
+for i in range(5000):
     loss=model.training_human(train,device)
     _, _, _, _, _, loss_test = model.test_human(test,device)
     loss_train_rec.append(sum(loss))

@@ -10,12 +10,12 @@ import control
 import random
 
 class VAE(nn.Module):
-    def __init__(self, enc_out_dim=4, latent_dim=3, input_height=4,lr=1e-3,hidden_layers=256):
+    def __init__(self, enc_out_dim=4, latent_dim=3, input_height=4,lr=1e-3,hidden_layers=64):
         super(VAE, self).__init__()
         self.lr=lr                  # learning rate
         self.count=0                # counter
-        self.kl_weight=1.0          # KL divergence weight
-        self.lin_weight=10.0         # linear transition approximation weight
+        self.kl_weight=0.1          # KL divergence weight
+        self.lin_weight=2.0         # linear transition approximation weight
         self.recon_weight=1.0       # Reconstruction weight
         self.flatten = nn.Flatten() # Flatten array operation
         self.latent_dim=latent_dim  # Dimension of latent space
@@ -28,8 +28,10 @@ class VAE(nn.Module):
             # nn.BatchNorm1d(input_height),
             nn.Linear(input_height, hidden_layers),
             nn.ReLU(),
+            # nn.Dropout(p=0.5),
             nn.Linear(hidden_layers, hidden_layers),
             nn.ReLU(),
+            nn.Dropout(p=0.5),
             nn.Linear(hidden_layers, hidden_layers),
             nn.ReLU(),
         )
@@ -47,12 +49,15 @@ class VAE(nn.Module):
             nn.Linear(latent_dim, hidden_layers),
             nn.ReLU(),
             nn.Linear(hidden_layers, hidden_layers),
+            # nn.Dropout(p=0.5),
             nn.ReLU(),
+            nn.Dropout(p=0.5),
             nn.Linear(hidden_layers, hidden_layers),
             nn.ReLU()
         )
         self.decoder_mu= nn.Sequential(
-            nn.Linear(hidden_layers, enc_out_dim),
+            nn.Linear(hidden_layers, enc_out_dim)
+            # nn.Threshold(5., 5., inplace=False)
             # nn.Tanh(),#ReLU(),
         )
         self.decoder_std= nn.Sequential(
@@ -60,7 +65,10 @@ class VAE(nn.Module):
             # nn.Tanh(),#ReLU(),
         )        
         self.decoder1= nn.Sequential(
-            nn.Linear(latent_dim, latent_dim**2+latent_dim),
+            nn.Linear(latent_dim,hidden_layers),
+            nn.ReLU(),
+            nn.Linear(hidden_layers,hidden_layers),
+            nn.Linear(hidden_layers, latent_dim**2+latent_dim),
             # nn.Tanh(),#ReLU(),
         )
         self.decoder1_LTI= nn.Sequential(
@@ -82,7 +90,7 @@ class VAE(nn.Module):
         # for the gaussian likelihood
         self.log_scale = nn.Parameter(torch.Tensor([0.0]))
         self.optimizer=self.configure_optimizers(lr=lr)
-        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.99)
+        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.95)
 
     def forward(self, x):
         '''Takes in the state x and returns the encoded distribution mean and standard deviation
@@ -110,7 +118,7 @@ class VAE(nn.Module):
         approximate state transition matrix \tilde{A} and \tilde{B}'''
         xhat= self.decoder0(z)
         mu_x=self.decoder_mu(xhat)
-        std_x=torch.exp(self.decoder_std(xhat)/2)
+        std_x=torch.exp(self.decoder_std(xhat)/2+10**-10)
         lin=self.decoder1(z)
         A=torch.reshape(lin[:,:self.latent_dim**2],(len(z),self.latent_dim,self.latent_dim))       
         B=torch.reshape(lin[:,self.latent_dim**2:self.latent_dim**2+self.latent_dim],(len(z),self.latent_dim,1))   
@@ -164,7 +172,7 @@ class VAE(nn.Module):
         likelihood that xt is sampled from the decoded distribution \hat{x}t'''
         # scale = torch.exp(logscale)
         mean = x_hat
-        dist = torch.distributions.Normal(mean, scale)
+        dist = torch.distributions.Normal(mean, scale+10**-15)
 
         # measure prob of seeing image under p(x|z)
         log_pxz = dist.log_prob(x)
@@ -415,13 +423,13 @@ class VAE(nn.Module):
                 x_hat, _, _, _ = self.decoder_sim(z,inp)
         return x_hat.detach().numpy(), z.detach().numpy(), (-K@z.T).detach().numpy().item()
 
-    def get_ctrl_LQR(self, z_tracked, batch, device=[], prev_err=[],LTI=True):
+    def get_ctrl_LQR(self, z_tracked, batch, device=[], prev_err=[],LTI=False):
         with torch.no_grad():
 
             inp=torch.tensor([0],dtype=torch.float).to(device)
 
             R = 1.0*np.ones(1)#np.eye(3)
-            Q = 10.*np.eye(self.latent_dim)
+            Q = 100.*np.eye(self.latent_dim)
             
 
             running_loss=[0.,0.,0.]
