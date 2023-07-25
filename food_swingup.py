@@ -33,16 +33,16 @@ xdes=sim.get_state(sim.data)
 xdes[1]=math.pi
 u_init=np.zeros((tspan,sim.nact))
 for i in range(tspan):
-    u_init[i]=5.0*math.sin(2*math.pi*i*0.01)
-    
+    u_init[i]=-5.0*math.sin(2*math.pi*i*0.01)
+num_runs=100 
 # for i in range(999):
 #     # sim.data.ctrl[0]=u_init[i]
 #     sim.step_forward([u_init[0,i]])
     # sim.render_image()
-urec=np.zeros((30,tspan*2))
-xrec=np.zeros((30,tspan*2,len(xdes)))
+urec=np.zeros((num_runs,tspan*2))
+xrec=np.zeros((num_runs,tspan*2,len(xdes)))
 rec_count=0
-for i in range(30):
+for i in range(num_runs):
     rec_info=True
     sim.random_configuration()
     ctrl = opt_ctrl(sim,xdes=xdes,tspan=tspan,Q=Q,R=R,Q_term=Q_term,u_init=u_init)
@@ -54,7 +54,7 @@ for i in range(30):
         if j<len(Uout):
             u0=Uout[j]
         else:
-            if abs(sim.get_state(sim.data)[1]-math.pi)>45*math.pi/180:
+            if abs(sim.get_state(sim.data)[1]-xdes[1])>45*math.pi/180:
                 rec_info=False
             u0=ctrl.lqr()
         us.append(u0)
@@ -64,8 +64,8 @@ for i in range(30):
         urec[rec_count,:]=np.array(us).flatten()
         xrec[rec_count,:,:]=np.array(xs)
         rec_count+=1
-np.save('xrec',xrec)
-np.save('urec',urec)
+np.save('xrec_rev',xrec)
+np.save('urec_rev',urec)
 
 # for i in range(tspan):
 #     sim.data.ctrl[0]=u_init[i]

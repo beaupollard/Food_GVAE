@@ -23,27 +23,28 @@ test=torch.utils.data.DataLoader(d2,batch_size=len(d2), shuffle=False)
 model=VAE(enc_out_dim=len(d1[0][0])-1,input_height=len(d1[0][0])-1)
 
 ## Save model to either cpu or gpu ##
-device = torch.device("cpu")    # Save the model to the CPU
+# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")    #Save the model to the CPU
 model.to(device)
 
-# model.load_state_dict(torch.load("./models/swing_up_ctrl")) 
+# model.load_state_dict(torch.load('./models/swing_up2')) 
 count=0
 # model.human_rollout(test,device)
 loss_test_rec=[]
 loss_train_rec=[]
 ## Training loop ##
-for i in range(10000):
+for i in range(500):
     loss=model.training_human(train,device)
     _, _, _, _, _, loss_test = model.test_human(test,device)
     loss_train_rec.append(sum(loss))
     loss_test_rec.append(sum(loss_test))
-    if count==100:     
+    if count==50:     
         model.scheduler.step()
         count=0
     count+=1
     print(i, loss)
 
-torch.save(model.state_dict(), './models/swing_up')    # Save the current model
+torch.save(model.state_dict(), './models/swing_up2')    # Save the current model
 
 
 ## Testing loop ##
