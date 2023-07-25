@@ -10,12 +10,12 @@ import control
 import random
 
 class VAE(nn.Module):
-    def __init__(self, enc_out_dim=4, latent_dim=2, input_height=4,lr=1e-2,hidden_layers=256):
+    def __init__(self, enc_out_dim=4, latent_dim=3, input_height=4,lr=1e-3,hidden_layers=256):
         super(VAE, self).__init__()
         self.lr=lr                  # learning rate
         self.count=0                # counter
         self.kl_weight=1.0          # KL divergence weight
-        self.lin_weight=5.0         # linear transition approximation weight
+        self.lin_weight=10.0         # linear transition approximation weight
         self.recon_weight=1.0       # Reconstruction weight
         self.flatten = nn.Flatten() # Flatten array operation
         self.latent_dim=latent_dim  # Dimension of latent space
@@ -49,9 +49,16 @@ class VAE(nn.Module):
             nn.Linear(hidden_layers, hidden_layers),
             nn.ReLU(),
             nn.Linear(hidden_layers, hidden_layers),
-            nn.ReLU(),
-            nn.Linear(hidden_layers, enc_out_dim),
+            nn.ReLU()
         )
+        self.decoder_mu= nn.Sequential(
+            nn.Linear(hidden_layers, enc_out_dim),
+            # nn.Tanh(),#ReLU(),
+        )
+        self.decoder_std= nn.Sequential(
+            nn.Linear(hidden_layers, enc_out_dim),
+            # nn.Tanh(),#ReLU(),
+        )        
         self.decoder1= nn.Sequential(
             nn.Linear(latent_dim, latent_dim**2+latent_dim),
             # nn.Tanh(),#ReLU(),
@@ -102,11 +109,12 @@ class VAE(nn.Module):
         '''Takes in a randomly sampled latent space point and outputs the recreation \tilde{x} and 
         approximate state transition matrix \tilde{A} and \tilde{B}'''
         xhat= self.decoder0(z)
-
+        mu_x=self.decoder_mu(xhat)
+        std_x=torch.exp(self.decoder_std(xhat)/2)
         lin=self.decoder1(z)
         A=torch.reshape(lin[:,:self.latent_dim**2],(len(z),self.latent_dim,self.latent_dim))       
         B=torch.reshape(lin[:,self.latent_dim**2:self.latent_dim**2+self.latent_dim],(len(z),self.latent_dim,1))   
-        return xhat, A, B
+        return mu_x, A, B, std_x
 
     def decoder_sim_LTV(self,z):
         '''Takes in a sampled latent space point z and returns the linearized dynamic model at that point
@@ -151,10 +159,10 @@ class VAE(nn.Module):
         return torch.optim.Adam(self.parameters(), lr=lr)
         # return torch.optim.SGD(self.parameters(), lr=lr, momentum=0.9)
 
-    def gaussian_likelihood(self, x_hat, logscale, x):
+    def gaussian_likelihood(self, x_hat, scale, x):
         '''Takes in the decoded latent space distribution mean \hat{x}t and the current state xt. It outputs the 
         likelihood that xt is sampled from the decoded distribution \hat{x}t'''
-        scale = torch.exp(logscale)
+        # scale = torch.exp(logscale)
         mean = x_hat
         dist = torch.distributions.Normal(mean, scale)
 
@@ -219,11 +227,11 @@ class VAE(nn.Module):
                 zout=torch.bmm(A.unsqueeze(0).expand(len(x),self.latent_dim, self.latent_dim),z.unsqueeze(2)).flatten(1)
 
             else:
-                x_hat, A, B = self.decoder_LTV(z)
+                x_hat, A, B, std_x = self.decoder_LTV(z)
                 zout=(torch.bmm(A,z.unsqueeze(2))+(torch.bmm(B,x[:,-1:].unsqueeze(1)))).flatten(1)
                 for jj in range(y_ind-1):
                     zout=(torch.bmm(A,zout.unsqueeze(2))+(torch.bmm(B,(y[jj][:,-1:].to(device)).unsqueeze(1)))).flatten(1)
-                x_hat2, _, _ = self.decoder_LTV(zout)
+                x_hat2, _, _, std_x2 = self.decoder_LTV(zout)
             muy, stdy = self.forward(y[y_ind-1][:,:-1].to(device))
             qy=torch.distributions.Normal(muy,stdy)
             ztp1=qy.rsample()  
@@ -233,8 +241,8 @@ class VAE(nn.Module):
             # lin_loss=F.mse_loss(zout,ztp1)*self.lin_weight # State transition matrix loss
             # kl_test=self.kl_gauss(mu, std, muy, stdy)
             lin_loss=torch.distributions.kl.kl_divergence(qz, qy).sum(1).mean()*self.lin_weight # State transition matrix loss
-            recon_loss = -(self.gaussian_likelihood(x_hat, self.log_scale, x[:,:-1])*self.recon_weight).mean() # recreation loss
-            recon_loss -= (self.gaussian_likelihood(x_hat2, self.log_scale, y[y_ind-1][:,:-1].to(device))*self.recon_weight).mean()
+            recon_loss = -(self.gaussian_likelihood(x_hat, std_x, x[:,:-1])*self.recon_weight).mean() # recreation loss
+            recon_loss -= (self.gaussian_likelihood(x_hat2, std_x2, y[y_ind-1][:,:-1].to(device))*self.recon_weight).mean()
             kl = torch.distributions.kl.kl_divergence(q, self.q_prior).sum(1).mean()*self.kl_weight # self.kl_divergence(z, mu, std)*self.kl_weight  # KL divergence
             # kl = self.kl_divergence(z, mu, std)*self.kl_weight  # KL divergence
             
@@ -277,10 +285,10 @@ class VAE(nn.Module):
                     # for j in range(zout.size()[0]):
                     #     zout[j,:]=A@z[j,:]
                 else:
-                    x_hat, A, B = self.decoder_LTV(z)
+                    x_hat, A, B, std_x = self.decoder_LTV(z)
                     ## Calculate the z_(t+1) estimate from linearized model ##
                     zout=(torch.bmm(A,z.unsqueeze(2))+(torch.bmm(B,x[:,-1:].unsqueeze(1)))).flatten(1)
-                    x_hat2, _, _ = self.decoder_LTV(zout)
+                    x_hat2, _, _, std_x2 = self.decoder_LTV(zout)
 
                 muy, stdy = self.forward(y[:,:-1])
                 qy=torch.distributions.Normal(muy,stdy)
@@ -289,8 +297,8 @@ class VAE(nn.Module):
                 
 
                 lin_loss=torch.distributions.kl.kl_divergence(qz, qy).sum(1).mean()*self.lin_weight # State transition matrix loss
-                recon_loss = -(self.gaussian_likelihood(x_hat, self.log_scale, x[:,:-1])*self.recon_weight).mean() # recreation loss
-                recon_loss -= (self.gaussian_likelihood(x_hat2, self.log_scale, y[:,:-1])*self.recon_weight).mean()
+                recon_loss = -(self.gaussian_likelihood(x_hat, std_x, x[:,:-1])*self.recon_weight).mean() # recreation loss
+                recon_loss -= (self.gaussian_likelihood(x_hat2, std_x2, y[:,:-1])*self.recon_weight).mean()
                 kl = torch.distributions.kl.kl_divergence(q, self.q_prior).sum(1).mean()  
                 running_loss[0] += (recon_loss.mean().item())
                 running_loss[1] += kl.mean().item()
@@ -481,15 +489,15 @@ class VAE(nn.Module):
                     x_hat, _, _ = self.decoder_LTI(ztilde,inp)
                 else:
                     ztilde=torch.empty((iters,self.latent_dim),requires_grad=False)
-                    _, A, B = self.decoder_LTV(z.unsqueeze(0))
+                    _, A, B, _ = self.decoder_LTV(z.unsqueeze(0))
                     ztilde[0,:]=copy.copy(z)
                     for j in range(iters-1):
-                        _, A, B = self.decoder_LTV(ztilde[j,:].unsqueeze(0))
+                        _, A, B, _ = self.decoder_LTV(ztilde[j,:].unsqueeze(0))
                         ztilde[j+1,:]=A[0]@ztilde[j,:]+B[0].flatten()*x_roll[j,-1]
                         #(torch.bmm(A[0],ztilde[j,:].unsqueeze(2))+(torch.bmm(B,x[:,-1:].unsqueeze(1)))).flatten(1)
                         
                         
-                    x_hat, _, _ = self.decoder_LTV(ztilde)
+                    x_hat, _, _, std_x = self.decoder_LTV(ztilde)
                 zout,_=self.forward(x_roll[:,:-1])
                 # for ii in range(6):
                 #     plt.subplot(2, 3, ii+1)
