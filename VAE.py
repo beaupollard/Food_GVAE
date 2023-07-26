@@ -10,7 +10,7 @@ import control
 import random
 
 class VAE(nn.Module):
-    def __init__(self, enc_out_dim=4, latent_dim=3, input_height=4,lr=1e-3,hidden_layers=64):
+    def __init__(self, enc_out_dim=4, latent_dim=3, input_height=4,lr=1e-4,hidden_layers=256):
         super(VAE, self).__init__()
         self.lr=lr                  # learning rate
         self.count=0                # counter
@@ -513,8 +513,8 @@ class VAE(nn.Module):
                 #     plt.plot(x_hat[:,ii])
                 # plt.show()
                 for ii in range(self.latent_dim):
-                    plt.subplot(2, 3, ii+1)
-                    plt.plot(zout[:,ii])
-                    plt.plot(ztilde[:,ii])
+                    plt.subplot(1, 3, ii+1)
+                    plt.plot(zout[:,ii],linewidth=4)
+                    plt.plot(ztilde[:,ii],linewidth=4)
                 plt.show()
                 
