@@ -10,12 +10,12 @@ import control
 import random
 
 class VAE(nn.Module):
-    def __init__(self, enc_out_dim=4, latent_dim=3, input_height=4,lr=1e-4,hidden_layers=256):
+    def __init__(self, enc_out_dim=4, latent_dim=3, input_height=4,lr=1e-4,hidden_layers=128):
         super(VAE, self).__init__()
         self.lr=lr                  # learning rate
         self.count=0                # counter
-        self.kl_weight=0.1          # KL divergence weight
-        self.lin_weight=2.0         # linear transition approximation weight
+        self.kl_weight=0.50         # KL divergence weight
+        self.lin_weight=1.0         # linear transition approximation weight
         self.recon_weight=1.0       # Reconstruction weight
         self.flatten = nn.Flatten() # Flatten array operation
         self.latent_dim=latent_dim  # Dimension of latent space
@@ -236,9 +236,12 @@ class VAE(nn.Module):
 
             else:
                 x_hat, A, B, std_x = self.decoder_LTV(z)
-                zout=(torch.bmm(A,z.unsqueeze(2))+(torch.bmm(B,x[:,-1:].unsqueeze(1)))).flatten(1)
+                zout=(torch.bmm(A,z.unsqueeze(2))).flatten(1)
                 for jj in range(y_ind-1):
-                    zout=(torch.bmm(A,zout.unsqueeze(2))+(torch.bmm(B,(y[jj][:,-1:].to(device)).unsqueeze(1)))).flatten(1)
+                    zout=(torch.bmm(A,zout.unsqueeze(2))).flatten(1)                
+                # zout=(torch.bmm(A,z.unsqueeze(2))+(torch.bmm(B,x[:,-1:].unsqueeze(1)))).flatten(1)
+                # for jj in range(y_ind-1):
+                #     zout=(torch.bmm(A,zout.unsqueeze(2))+(torch.bmm(B,(y[jj][:,-1:].to(device)).unsqueeze(1)))).flatten(1)
                 x_hat2, _, _, std_x2 = self.decoder_LTV(zout)
             muy, stdy = self.forward(y[y_ind-1][:,:-1].to(device))
             qy=torch.distributions.Normal(muy,stdy)
@@ -295,7 +298,8 @@ class VAE(nn.Module):
                 else:
                     x_hat, A, B, std_x = self.decoder_LTV(z)
                     ## Calculate the z_(t+1) estimate from linearized model ##
-                    zout=(torch.bmm(A,z.unsqueeze(2))+(torch.bmm(B,x[:,-1:].unsqueeze(1)))).flatten(1)
+                    zout=(torch.bmm(A,z.unsqueeze(2))).flatten(1)
+                    # zout=(torch.bmm(A,z.unsqueeze(2))+(torch.bmm(B,x[:,-1:].unsqueeze(1)))).flatten(1)
                     x_hat2, _, _, std_x2 = self.decoder_LTV(zout)
 
                 muy, stdy = self.forward(y[:,:-1])
@@ -501,7 +505,7 @@ class VAE(nn.Module):
                     ztilde[0,:]=copy.copy(z)
                     for j in range(iters-1):
                         _, A, B, _ = self.decoder_LTV(ztilde[j,:].unsqueeze(0))
-                        ztilde[j+1,:]=A[0]@ztilde[j,:]+B[0].flatten()*x_roll[j,-1]
+                        ztilde[j+1,:]=A[0]@ztilde[j,:]#+B[0].flatten()*x_roll[j,-1]
                         #(torch.bmm(A[0],ztilde[j,:].unsqueeze(2))+(torch.bmm(B,x[:,-1:].unsqueeze(1)))).flatten(1)
                         
                         

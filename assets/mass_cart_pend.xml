@@ -19,7 +19,7 @@
             <geom mass="0.495" condim='1' size="0.05 0.05 0.05" type="box" rgba="0 0 0.8 1" />
             <joint type='slide' name='cart1' pos='0 0 0' axis="1 0 0" limited="false" range="-1.5 1.5"/>
             <body name="cart2" pos="0.4 0 0.0">
-                <joint name="cart2" pos="0 0 0.0" axis="1 0 0" type='slide' stiffness='175.0' damping='5.0' />
+                <joint name="cart2" pos="0 0 0.0" axis="1 0 0" type='slide' stiffness="175.0" damping="5.0" />
                 <geom mass='0.537' size="0.05 0.05 0.05" type="box" rgba="1 0 0 1" />
                 <body name="pend" pos="0.0 -0.075 -0.325">
                     <joint name="pend" pos="0 0 0.325" axis="0 1 0" type='hinge' stiffness='0.' damping='0.' />

@@ -28,8 +28,11 @@ class opt_ctrl():
         
         # P=scipy.linalg.solve_continuous_are(A,B,self.Q,self.R)
         # K = np.linalg.pinv(B.T@P@B+self.R)@(B.T@P@A)
-        K, _, _ = control.dlqr(A,B,self.Q,self.R)
-        u=-K@(self.dyn_model.get_state(self.dyn_model.data)-self.xdes)
+        try:
+            K, _, _ = control.dlqr(A,B,self.Q,self.R)
+            u=-K@(self.dyn_model.get_state(self.dyn_model.data)-self.xdes)
+        except:
+            u=np.array([0.])
 
         return u
 
@@ -147,8 +150,8 @@ class opt_ctrl():
             lu = self.R@u
             luu = self.R
             lux = np.zeros((self.nact,self.state_size))
-            if l>1e6:
-                print('stop')
+            # if l>1e6:
+            #     print('stop')
             return l, lx, lxx, lu, luu, lux
 
     def new_ctrl(self,dyn_model,xs,u,k,K,alpha=1.):

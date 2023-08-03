@@ -12,8 +12,8 @@ from scipy import signal
 BS=int(512)    # Batch size for training
 
 ## Load previously generated simulation data ##
-d1=torch.load('./data_swing.pt')
-d2=torch.load('./data_swing_val.pt')
+d1=torch.load('./data_multi.pt')
+d2=torch.load('./data_multi_val.pt')
 
 ## Setup data loader ##
 train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=True)
@@ -27,11 +27,15 @@ model=VAE(enc_out_dim=len(d1[0][0])-1,input_height=len(d1[0][0])-1)
 device = torch.device("cpu")    #Save the model to the CPU
 model.to(device)
 
-# model.load_state_dict(torch.load('./models/swing_up2')) 
+# model.load_state_dict(torch.load('./models/swing_up3')) 
 count=0
+
 # model.human_rollout(test,device)
 loss_test_rec=[]
 loss_train_rec=[]
+klf_lr=5.0
+kl_init_lr=0.5
+gamma=0.15
 ## Training loop ##
 for i in range(5000):
     loss=model.training_human(train,device)
@@ -41,6 +45,8 @@ for i in range(5000):
     if count==50:     
         model.scheduler.step()
         count=0
+        model.kl_weight=(klf_lr+kl_init_lr)-klf_lr*math.exp(-gamma*i/50)
+
     count+=1
     print(i, loss)
 
