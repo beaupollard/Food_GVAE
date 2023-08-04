@@ -12,12 +12,15 @@ from scipy import signal
 BS=int(512)    # Batch size for training
 
 ## Load previously generated simulation data ##
+# d1=torch.load('./data_multi_update.pt')
+# d2=torch.load('./data_multi_val_update.pt')
 d1=torch.load('./data_multi.pt')
 d2=torch.load('./data_multi_val.pt')
 
 ## Setup data loader ##
 train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=True)
 test=torch.utils.data.DataLoader(d2,batch_size=len(d2), shuffle=False)
+# test2=torch.utils.data.DataLoader(d1,batch_size=len(d1), shuffle=False)
 
 ## Initialize the NN model ##
 model=VAE(enc_out_dim=len(d1[0][0])-1,input_height=len(d1[0][0])-1)
@@ -27,7 +30,7 @@ model=VAE(enc_out_dim=len(d1[0][0])-1,input_height=len(d1[0][0])-1)
 device = torch.device("cpu")    #Save the model to the CPU
 model.to(device)
 
-# model.load_state_dict(torch.load('./models/swing_up3')) 
+# model.load_state_dict(torch.load('./models/swing_human2')) 
 count=0
 
 # model.human_rollout(test,device)
@@ -35,17 +38,17 @@ loss_test_rec=[]
 loss_train_rec=[]
 klf_lr=5.0
 kl_init_lr=0.5
-gamma=0.15
+gamma=0.05
 ## Training loop ##
 for i in range(5000):
     loss=model.training_human(train,device)
     _, _, _, _, _, loss_test = model.test_human(test,device)
     loss_train_rec.append(sum(loss))
     loss_test_rec.append(sum(loss_test))
-    if count==50:     
+    if count==25:     
         model.scheduler.step()
         count=0
-        model.kl_weight=(klf_lr+kl_init_lr)-klf_lr*math.exp(-gamma*i/50)
+    # model.kl_weight=(klf_lr+kl_init_lr)-klf_lr*math.exp(-gamma*i/50)
 
     count+=1
     print(i, loss)
@@ -72,3 +75,15 @@ plt.show()
 for i in range(0,len(x),sim_length):
     plt.plot(x[i:i+sim_length,0],x[i:i+sim_length,1])
 plt.show()
+
+# for i in range(144):
+#     for ii in range(3):
+#         plt.subplot(1, 3, ii+1)
+#         plt.plot(z2[i*996:(i+1)*996,ii],'b')
+# for i in range(20):
+#     for ii in range(3):
+#         plt.subplot(1, 3, ii+1)
+#         plt.plot(z[i*996:(i+1)*996,ii],'b')
+# for ii in range(3):
+#     plt.subplot(1, 3, ii+1)
+#     plt.plot(zzout[:,ii],'r')

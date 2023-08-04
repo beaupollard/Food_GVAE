@@ -10,13 +10,13 @@ import control
 import random
 
 class VAE(nn.Module):
-    def __init__(self, enc_out_dim=4, latent_dim=3, input_height=4,lr=1e-4,hidden_layers=128):
+    def __init__(self, enc_out_dim=4, latent_dim=2, input_height=4,lr=1e-4,hidden_layers=64):
         super(VAE, self).__init__()
         self.lr=lr                  # learning rate
         self.count=0                # counter
-        self.kl_weight=0.50         # KL divergence weight
+        self.kl_weight=1.0         # KL divergence weight
         self.lin_weight=1.0         # linear transition approximation weight
-        self.recon_weight=1.0       # Reconstruction weight
+        self.recon_weight=3.0       # Reconstruction weight
         self.flatten = nn.Flatten() # Flatten array operation
         self.latent_dim=latent_dim  # Dimension of latent space
         self.enc_out_dim=enc_out_dim# Dimension of encoder output array
@@ -521,4 +521,5 @@ class VAE(nn.Module):
                     plt.plot(zout[:,ii],linewidth=4)
                     plt.plot(ztilde[:,ii],linewidth=4)
                 plt.show()
+        return zout
                 
