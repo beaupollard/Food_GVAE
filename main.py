@@ -12,10 +12,10 @@ from scipy import signal
 BS=int(512)    # Batch size for training
 
 ## Load previously generated simulation data ##
-# d1=torch.load('./data_multi_update.pt')
-# d2=torch.load('./data_multi_val_update.pt')
-d1=torch.load('./data_multi.pt')
-d2=torch.load('./data_multi_val.pt')
+d1=torch.load('./data_0807.pt')
+d2=torch.load('./data_0807_val.pt')
+# d1=torch.load('./data_multi.pt')
+# d2=torch.load('./data_multi_val.pt')
 
 ## Setup data loader ##
 train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=True)

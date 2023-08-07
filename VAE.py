@@ -10,7 +10,7 @@ import control
 import random
 
 class VAE(nn.Module):
-    def __init__(self, enc_out_dim=4, latent_dim=2, input_height=4,lr=1e-4,hidden_layers=64):
+    def __init__(self, enc_out_dim=4, latent_dim=3, input_height=4,lr=5e-4,hidden_layers=128):
         super(VAE, self).__init__()
         self.lr=lr                  # learning rate
         self.count=0                # counter
@@ -76,8 +76,11 @@ class VAE(nn.Module):
             # nn.Tanh(),#ReLU(),
         )
         self.decodersim1= nn.Sequential(
-            nn.Linear(latent_dim, latent_dim**2+2*latent_dim),
-            # nn.Tanh(),#ReLU(),
+            # nn.Linear(latent_dim,latent_dim**2+2*latent_dim)
+            nn.Linear(latent_dim,hidden_layers),
+            nn.ReLU(),
+            nn.Linear(hidden_layers,hidden_layers),
+            nn.Linear(hidden_layers, latent_dim**2+latent_dim),
         )
         self.decodersim1_LTI= nn.Sequential(
             nn.Linear(1, latent_dim**2+2*latent_dim),
@@ -133,17 +136,19 @@ class VAE(nn.Module):
         B [Batch size, latent space dim, 1]
         K [Batch size, 1, latent space dim]'''        
         xhat= self.decoder0(z)
+        mu_x=self.decoder_mu(xhat)
+        std_x=torch.exp(self.decoder_std(xhat)/2+10**-10)        
         lin=self.decodersim1(z)
         if len(z.size())==2:
             A=torch.reshape(lin[:,:self.latent_dim**2],(len(z),self.latent_dim,self.latent_dim))         
             B=torch.reshape(lin[:,self.latent_dim**2:self.latent_dim**2+self.latent_dim],(len(z),self.latent_dim,1))        
-            K=torch.reshape(lin[:,self.latent_dim**2+self.latent_dim:],(len(z),1,self.latent_dim))
+            # K=torch.reshape(lin[:,self.latent_dim**2+self.latent_dim:],(len(z),1,self.latent_dim))
         else:
             A=torch.reshape(lin[:self.latent_dim**2],(self.latent_dim,self.latent_dim))      
             B=torch.reshape(lin[self.latent_dim**2:self.latent_dim**2+self.latent_dim],(self.latent_dim,1))        
-            K=torch.reshape(lin[self.latent_dim**2+self.latent_dim:],(1,self.latent_dim))               
+            # K=torch.reshape(lin[self.latent_dim**2+self.latent_dim:],(1,self.latent_dim))               
         
-        return xhat, A, B, K
+        return mu_x, A, B, std_x
 
     def decoder_sim_LTI(self,z,inp):
         '''Takes in a sampled latent space point z and returns the linearized dynamic model at that point
@@ -323,6 +328,7 @@ class VAE(nn.Module):
             
             running_loss=[0.,0.,0.]
             for i in iter(batch):
+               
                 self.optimizer.zero_grad()
                 x = i[0].to(device)
                 y = i[1].to(device)   
@@ -337,12 +343,10 @@ class VAE(nn.Module):
                         zout[j,:]=A@z[j,:]+(B*x[j,-1]).flatten()
                         u.append(-(K@z[j,:]).detach().numpy().item())       
                 else:
-                    x_hat, A, B, K =self.decoder_sim_LTV(z)
-                    zout=torch.empty_like(z,requires_grad=False)
-                    u=[]
-                    for j in range(zout.size()[0]):
-                        zout[j,:]=A[j,:,:]@z[j,:]+(B[j,:]*x[j,-1]).flatten()
-                        u.append(-(K[j,:]@z[j,:]).detach().numpy().item())                
+                    x_hat, A, B, std_x = self.decoder_LTV(z)
+                    zout=(torch.bmm(A,z.unsqueeze(2))+(torch.bmm(B,x[:,-1:].unsqueeze(1)))).flatten(1)
+                    # for jj in range(y_ind-1):
+                    #     zout=(torch.bmm(A,zout.unsqueeze(2))+(torch.bmm(B,(y[jj][:,-1:].to(device)).unsqueeze(1)))).flatten(1)               
                 
         return x_hat.detach().numpy(), z.detach().numpy(), x.detach().numpy(), zout.detach().numpy(), zt1.detach().numpy(), np.array(u)
 
@@ -355,56 +359,41 @@ class VAE(nn.Module):
 
         for i in iter(batch):
             self.optimizer.zero_grad()
-            
+            y_ind=random.randint(1,4)
             x = i[0].to(device)
-            y = i[1].to(device)            
+            y = i[1:]#.to(device)            
             with torch.no_grad():
                 # encode x to get the mu and variance parameters
                 mu, std = self.forward(x[:,:-1])
 
                 q=torch.distributions.Normal(mu,std)
                 z=q.rsample()
-                muy, stdy = self.forward(y[:,:-1])
+
+                muy, stdy = self.forward(y[y_ind-1][:,:-1].to(device))
                 qy=torch.distributions.Normal(muy,stdy)
                 ztp1=qy.rsample()  
 
-                z, std = self.forward(x[:,:self.enc_out_dim])
-                zt1, stdy = self.forward(y[:,:self.enc_out_dim])
             
-            if LTI==True:
-                x_hat, A, B, K =self.decoder_sim_LTI(z,inp)
-                zout=torch.empty_like(z,requires_grad=False)
-                u=[]
-                for j in range(zout.size()[0]):
-                    zout[j,:]=A@z[j,:]+(B*x[j,-1]).flatten()
-                    u.append(-(K@z[j,:]).detach().numpy().item())       
-            else:
-                x_hat, A, B, K =self.decoder_sim_LTV(z)
-                zout=torch.empty_like(z,requires_grad=False)
-                u=[]
-                for j in range(zout.size()[0]):
-                    zout[j,:]=A[j,:,:]@z[j,:]+(B[j,:]*x[j,-1]).flatten()
-                    u.append(-(K[j,:]@z[j,:]).detach().numpy().item())
-            
+            x_hat, A, B, std_x = self.decoder_sim_LTV(z)
+            zout=(torch.bmm(A,z.unsqueeze(2))+(torch.bmm(B,x[:,-1:].unsqueeze(1)))).flatten(1)
+            for jj in range(y_ind-1):
+                zout=(torch.bmm(A,zout.unsqueeze(2))+(torch.bmm(B,(y[jj][:,-1:].to(device)).unsqueeze(1)))).flatten(1)       
+            # x_hat2, _, _, std_x2 = self.decoder_sim_LTV(zout)
             qz=torch.distributions.Normal(zout,std)
-            # lin_loss=torch.distributions.kl.kl_divergence(q, qy).mean()*self.lin_weight   # State transition matrix loss
-            # eig_loss=F.mse_loss(torch.linalg.eig(A-B@K)[1].real,torch.linalg.eig(A_human)[1].real)*1.0+F.mse_loss(torch.linalg.eig(A-B@K)[1].imag,torch.linalg.eig(A_human)[1].imag)*1.0
-            kl_trans_loss=torch.distributions.kl.kl_divergence(qz, qy).mean()#self.kl_divergence(zout, mu, std, mu_prior=muy, std_prior=stdy)
-            ## Calculate the loss ##
-            # lin_loss=F.mse_loss(zout,ztp1)*1.
-            # ctrl_loss=F.mse_loss(-(K@z.T).flatten(),x[:,-1])*1.
-            elbo=kl_trans_loss.mean()
+            zzz=qy.rsample()
+            zz=qz.rsample()
+            # lin_loss=torch.distributions.kl.kl_divergence(qz, qy).sum(1).mean()*self.lin_weight
+            lin_loss=F.mse_loss(zz,zzz)
+            # recon_loss = -(self.gaussian_likelihood(x_hat2, std_x2, y[y_ind-1][:,:-1].to(device))*self.recon_weight).mean()
+            elbo=lin_loss#recon_loss+lin_loss
             # elbo=(kl+recon_loss).mean()+lin_loss
 
             elbo.backward()
-
+            torch.nn.utils.clip_grad_norm_(self.parameters(), 1.)
             self.optimizer.step()
-            # running_loss[0] += ctrl_loss.item()/len(zout)#np.exp(recon_loss.mean().item()/len(zout))
-            # running_loss[0] += lin_loss.item()/len(zout)
-            running_loss[0] += (kl_trans_loss.mean()).item()/len(zout)
-            # running_loss[2] += ctrl_loss.item()/len(zout)
-            # running_loss[2] += lin_loss.item()#/len(zout)
-            # lin_ap.append(lin_loss.item())
+            # running_loss[0] += (recon_loss.mean().item())
+            running_loss[1] += lin_loss.item()
+
         self.count+=1
         # self.scheduler.step()
         return running_loss

@@ -78,7 +78,7 @@ xdes[1]=math.pi
 u_init=np.zeros((tspan,sim.nact))
 for i in range(tspan):
     u_init[i]=-5.0*math.sin(2*math.pi*i*0.01)
-num_runs=300 
+num_runs=1000 
 # for i in range(999):
 #     # sim.data.ctrl[0]=u_init[i]
 #     sim.step_forward([u_init[0,i]])
@@ -92,26 +92,27 @@ for i in range(num_runs):
     sim.random_configuration()
     sim=set_up_mj(filename)
     ctrl = opt_ctrl(sim,xdes=xdes,tspan=tspan,Q=Q,R=R,Q_term=Q_term,u_init=u_init)
-    Uout, xout = ctrl.ilqr()
+    Uout, xout = ctrl.ilqr(max_iter=20)
     us=[]
     xs=[]
     for j in range(tspan*2):
         
         if j<len(Uout):
-            u0=Uout[j]
+            u0=Uout[j]+np.random.normal(0,1.)
         else:
             if abs(sim.get_state(sim.data)[1]-xdes[1])>45*math.pi/180:
                 rec_info=False
             u0=ctrl.lqr()
-        us.append(u0)
+        # us.append(u0)
         sim.step_forward(u0)
+        us.append(sim.data.actuator_force[0])
         xs.append(sim.get_state(sim.data))
     if rec_info:
         urec[rec_count,:]=np.array(us).flatten()
         xrec[rec_count,:,:]=np.array(xs)
         rec_count+=1
-np.save('xrec_rev2',xrec[:rec_count,:,:])
-np.save('urec_rev2',urec[:rec_count,:])
+np.save('data/xrec_rev6',xrec[:rec_count,:,:])
+np.save('data/urec_rev6',urec[:rec_count,:])
 
 # for i in range(tspan):
 #     sim.data.ctrl[0]=u_init[i]
