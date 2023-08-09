@@ -2,10 +2,19 @@ import numpy as np
 import torch
 import os
 import random
+import math
+xrec1=np.load('./data/xrec_rev8.npy')
+urec1=np.load('./data/urec_rev8.npy')
+urec1=np.clip(urec1,-20.,20.)
+save_inds=[]
+for i in range(len(xrec1)):
+    if abs(math.pi-xrec1[i,-1,1])*180/math.pi<10:
+        save_inds.append(i)
+    # else:
+    #     save_inds.append(i)
 
-xrec=np.load('./data/xrec_rev6.npy')
-urec=np.load('./data/urec_rev6.npy')
-urec=np.clip(urec,-20.,20.)
+xrec=xrec1[save_inds,:,:]
+urec=urec1[save_inds,:]
 # xrec2=np.load('./data/xrec_rev4.npy')
 # urec2=np.load('./data/urec_rev4.npy')
 # xrec=np.concatenate((xrec1,xrec2))
@@ -39,5 +48,5 @@ for i in range(len(xrec[:,0,0])):
     if i==rand[count] and count<len(rand)-1:
         count+=1
 
-torch.save(data,os.path.join('./',f'data_0807.pt'))        
-torch.save(data_val,os.path.join('./',f'data_0807_val.pt'))     
+torch.save(data,os.path.join('./',f'data_0808.pt'))        
+torch.save(data_val,os.path.join('./',f'data_0808_val.pt'))     

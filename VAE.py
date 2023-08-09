@@ -10,11 +10,11 @@ import control
 import random
 
 class VAE(nn.Module):
-    def __init__(self, enc_out_dim=4, latent_dim=3, input_height=4,lr=5e-4,hidden_layers=128):
+    def __init__(self, enc_out_dim=4, latent_dim=2, input_height=4,lr=1e-3,hidden_layers=128):
         super(VAE, self).__init__()
         self.lr=lr                  # learning rate
         self.count=0                # counter
-        self.kl_weight=1.0         # KL divergence weight
+        self.kl_weight=0.5         # KL divergence weight
         self.lin_weight=1.0         # linear transition approximation weight
         self.recon_weight=3.0       # Reconstruction weight
         self.flatten = nn.Flatten() # Flatten array operation
@@ -93,7 +93,7 @@ class VAE(nn.Module):
         # for the gaussian likelihood
         self.log_scale = nn.Parameter(torch.Tensor([0.0]))
         self.optimizer=self.configure_optimizers(lr=lr)
-        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.95)
+        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.90)
 
     def forward(self, x):
         '''Takes in the state x and returns the encoded distribution mean and standard deviation
@@ -328,27 +328,30 @@ class VAE(nn.Module):
             
             running_loss=[0.,0.,0.]
             for i in iter(batch):
-               
                 self.optimizer.zero_grad()
+                y_ind=1 #random.randint(1,4)
                 x = i[0].to(device)
-                y = i[1].to(device)   
-                # encode x to get the mu and variance parameters
-                z, std = self.forward(x[:,:self.enc_out_dim])
-                zt1, stdy = self.forward(y[:,:self.enc_out_dim])
-                if LTI==True:
-                    x_hat, A, B, K =self.decoder_sim_LTI(z,inp)
-                    zout=torch.empty_like(z,requires_grad=False)
-                    u=[]
-                    for j in range(zout.size()[0]):
-                        zout[j,:]=A@z[j,:]+(B*x[j,-1]).flatten()
-                        u.append(-(K@z[j,:]).detach().numpy().item())       
-                else:
-                    x_hat, A, B, std_x = self.decoder_LTV(z)
-                    zout=(torch.bmm(A,z.unsqueeze(2))+(torch.bmm(B,x[:,-1:].unsqueeze(1)))).flatten(1)
-                    # for jj in range(y_ind-1):
-                    #     zout=(torch.bmm(A,zout.unsqueeze(2))+(torch.bmm(B,(y[jj][:,-1:].to(device)).unsqueeze(1)))).flatten(1)               
+                y = i[1:]#.to(device)            
+                with torch.no_grad():
+                    # encode x to get the mu and variance parameters
+                    mu, std = self.forward(x[:,:-1])
+
+                    q=torch.distributions.Normal(mu,std)
+                    z=q.rsample()
+
+                    muy, stdy = self.forward(y[y_ind-1][:,:-1].to(device))
+                    qy=torch.distributions.Normal(muy,stdy)
+                    ztp1=qy.rsample() 
+                    _, A_out, B_out, _ = self.decoder_sim_LTV(muy)
+
                 
-        return x_hat.detach().numpy(), z.detach().numpy(), x.detach().numpy(), zout.detach().numpy(), zt1.detach().numpy(), np.array(u)
+                x_hat, A, B, std_x = self.decoder_sim_LTV(z)
+                zout=(torch.bmm(A,z.unsqueeze(2))+(torch.bmm(B,x[:,-1:].unsqueeze(1)))).flatten(1)       
+                qz=torch.distributions.Normal(zout,std)
+
+                lin_loss=torch.distributions.kl.kl_divergence(qz, qy).sum(1).mean()*self.lin_weight 
+            running_loss[1] += lin_loss.item()               
+        return x_hat.detach().numpy(), z.detach().numpy(), x.detach().numpy(), zout.detach().numpy(), running_loss
 
     def training_sim(self, batch,device,LTI=True):
         running_loss=[0.,0.,0.]
@@ -359,7 +362,7 @@ class VAE(nn.Module):
 
         for i in iter(batch):
             self.optimizer.zero_grad()
-            y_ind=random.randint(1,4)
+            y_ind=1 #random.randint(1,4)
             x = i[0].to(device)
             y = i[1:]#.to(device)            
             with torch.no_grad():
@@ -371,19 +374,20 @@ class VAE(nn.Module):
 
                 muy, stdy = self.forward(y[y_ind-1][:,:-1].to(device))
                 qy=torch.distributions.Normal(muy,stdy)
-                ztp1=qy.rsample()  
+                ztp1=qy.rsample() 
+                _, A_out, B_out, _ = self.decoder_sim_LTV(muy)
 
             
             x_hat, A, B, std_x = self.decoder_sim_LTV(z)
             zout=(torch.bmm(A,z.unsqueeze(2))+(torch.bmm(B,x[:,-1:].unsqueeze(1)))).flatten(1)
             for jj in range(y_ind-1):
-                zout=(torch.bmm(A,zout.unsqueeze(2))+(torch.bmm(B,(y[jj][:,-1:].to(device)).unsqueeze(1)))).flatten(1)       
+                zout=(torch.bmm(A,zout.unsqueeze(2))+(torch.bmm(B,(y[jj][:,-1:].to(device)).unsqueeze(1)))).flatten(1)
             # x_hat2, _, _, std_x2 = self.decoder_sim_LTV(zout)
             qz=torch.distributions.Normal(zout,std)
             zzz=qy.rsample()
             zz=qz.rsample()
-            # lin_loss=torch.distributions.kl.kl_divergence(qz, qy).sum(1).mean()*self.lin_weight
-            lin_loss=F.mse_loss(zz,zzz)
+            lin_loss=torch.distributions.kl.kl_divergence(qz, qy).sum(1).mean()*self.lin_weight
+            lin_loss+=F.mse_loss(zz,zzz)
             # recon_loss = -(self.gaussian_likelihood(x_hat2, std_x2, y[y_ind-1][:,:-1].to(device))*self.recon_weight).mean()
             elbo=lin_loss#recon_loss+lin_loss
             # elbo=(kl+recon_loss).mean()+lin_loss
@@ -416,38 +420,38 @@ class VAE(nn.Module):
                 x_hat, _, _, _ = self.decoder_sim(z,inp)
         return x_hat.detach().numpy(), z.detach().numpy(), (-K@z.T).detach().numpy().item()
 
-    def get_ctrl_LQR(self, z_tracked, batch, device=[], prev_err=[],LTI=False):
+    def get_ctrl_LQR(self, z_init, batch=[], device=[], iters=900,prev_err=[],LTI=False):
         with torch.no_grad():
-
-            inp=torch.tensor([0],dtype=torch.float).to(device)
+            z=torch.tensor(z_init)
+            z_tracked=self.sim_rollout(device,iters=iters,z_init=z_init,LTI=False)
 
             R = 1.0*np.ones(1)#np.eye(3)
-            Q = 100.*np.eye(self.latent_dim)
+            Q = 1.*np.eye(self.latent_dim)
             
-
-            running_loss=[0.,0.,0.]
-            
-            x = batch
-            z, std = self.forward(x[:self.enc_out_dim])
-
-            zrec=[z.detach().numpy()]
-            urec=[]
-            # for i in range(999):
-            if LTI==True:
-                x_hat, A, B, _ = self.decoder_sim_LTI(z.reshape((1,self.latent_dim)).type(torch.float),inp)
-                K, _, _ = control.dlqr(A,B,Q,R)
-            else:
-                x_hat, A, B, _ = self.decoder_sim_LTV(z.reshape((1,self.latent_dim)).type(torch.float))
-                K, _, _ = control.dlqr(A[0,:,:],B[0,:,:],Q,R)
-            u=-K@(z_tracked-z.detach().numpy())
-            if abs(u)>30:
-                u=30*u/abs(u)
+            u_rec=[]
+            ztilde=torch.empty((iters,self.latent_dim),requires_grad=False)
+            _, A, B, _ = self.decoder_LTV(z.unsqueeze(0))
+            ztilde[0,:]=copy.copy(z)
+            for j in range(iters-1):
+                _, A, B, _ = self.decoder_LTV(ztilde[j,:].unsqueeze(0))
+                # ztilde[j+1,:]=A[0]@ztilde[j,:]#+B[0].flatten()*x_roll[j,-1]
+                try:
+                    K, _, _ = control.dlqr(A[0],B[0],Q,R)
+                except:
+                    print("problem")
+                u=-K@(z_tracked[j+1,:].detach().numpy()-ztilde[j,:].detach().numpy())
+                if abs(u)>20:
+                    u=20*u/abs(u)
+                u_rec.append(copy.copy(u))
+                ztilde[j+1,:]=A[0]@ztilde[j,:]+B[0].flatten()*u
             # zrec.append((A[0,:,:]@z.type(torch.float)+B[0,:,:]@u).detach().numpy())
             # z=A[0,:,:]@z.type(torch.float)+B[0,:,:]@u
             # zrec.append(z.detach().numpy())
             # urec.append(u)
-
-        return u
+        # plt.plot(z_tracked[:,0],z_tracked[:,1],'r')
+        # plt.plot(ztilde[:,0],ztilde[:,1],'k')
+        # plt.show()
+        return u_rec[0]
 
     def plot_latent_smooth(self,xinp,yinp,fc=1.,fs=100.):
         '''Takes in x and y data, the cutoff frequency (fc) and the measurement frequency (fs) and 
@@ -511,4 +515,24 @@ class VAE(nn.Module):
                     plt.plot(ztilde[:,ii],linewidth=4)
                 plt.show()
         return zout
-                
+
+    def sim_rollout(self,device,iters=100,z_init=[],LTI=False):
+        with torch.no_grad():
+            z=torch.tensor(z_init)
+            running_loss=[0.,0.,0.]
+
+            self.optimizer.zero_grad()
+
+            # decoded
+            ztilde=torch.empty((iters,self.latent_dim),requires_grad=False)
+            _, A, B, _ = self.decoder_LTV(z.unsqueeze(0))
+            ztilde[0,:]=copy.copy(z)
+            for j in range(iters-1):
+                _, A, B, _ = self.decoder_LTV(ztilde[j,:].unsqueeze(0))
+                ztilde[j+1,:]=A[0]@ztilde[j,:]#+B[0].flatten()*x_roll[j,-1]
+                #(torch.bmm(A[0],ztilde[j,:].unsqueeze(2))+(torch.bmm(B,x[:,-1:].unsqueeze(1)))).flatten(1)
+                    
+                    
+            x_hat, _, _, std_x = self.decoder_LTV(ztilde)
+
+        return ztilde

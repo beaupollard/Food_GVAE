@@ -12,13 +12,13 @@ from scipy import signal
 BS=int(512)    # Batch size for training
 
 ## Load previously generated simulation data ##
-d1=torch.load('./data_learn.pt')
-d2=torch.load('./data_multi_update.pt')
-# d1=torch.load('./data_multi.pt')
-# d2=torch.load('./data_multi_val.pt')
+# d1=torch.load('./data.pt')
+# d2=torch.load('./data_val.pt')
+d1=torch.load('./data_0808.pt')
+d2=torch.load('./data_0808_val.pt')
 
 ## Setup data loader ##
-train=torch.utils.data.DataLoader(d1,batch_size=len(d1), shuffle=False)
+train=torch.utils.data.DataLoader(d1,batch_size=len(d1), shuffle=True)
 test=torch.utils.data.DataLoader(d2,batch_size=len(d2), shuffle=False)
 # test2=torch.utils.data.DataLoader(d1,batch_size=len(d1), shuffle=False)
 
@@ -30,7 +30,7 @@ model=VAE(enc_out_dim=len(d1[0][0])-1,input_height=len(d1[0][0])-1)
 device = torch.device("cpu")    #Save the model to the CPU
 model.to(device)
 
-model.load_state_dict(torch.load('./models/swing_human_LD2_SS5')) 
+model.load_state_dict(torch.load('./models/model_0809v4')) 
 # model.load_state_dict(torch.load('./models/swing_robot')) 
 count=0
 
@@ -43,9 +43,9 @@ gamma=0.05
 ## Training loop ##
 for i in range(5000):
     loss=model.training_sim(train,device)
-    # _, _, _, _, _, loss_test = model.test_human(test,device)
+    _, _, _, _, loss_test = model.test_sim(test,device)
     loss_train_rec.append(sum(loss))
-    # loss_test_rec.append(sum(loss_test))
+    loss_test_rec.append(sum(loss_test))
     if count==25:     
         model.scheduler.step()
         count=0
