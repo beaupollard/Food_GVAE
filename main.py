@@ -9,14 +9,19 @@ import time
 import torch
 from scipy import signal
 
-BS=int(256)    # Batch size for training
+torch.manual_seed(0)
+
+BS=int(10*128)    # Batch size for training
 
 ## Load previously generated simulation data ##
-d1=torch.load('./data_0808.pt')
-d2=torch.load('./data_0808_val.pt')
-# d1=torch.load('./data_multi.pt')
-# d2=torch.load('./data_multi_val.pt')
-
+# d1=torch.load('./data_0816_single.pt')
+# d2=torch.load('./data_0816_single_val.pt')
+d1=torch.load('./human_0912_notrain.pt')
+d2=torch.load('./human_0912_notrain.pt')
+# d1=torch.load('./human_0912.pt')
+# d2=torch.load('./human_0912_val.pt')
+# d1=torch.load('./data_0911.pt')
+# d2=torch.load('./data_0911_val.pt')
 ## Setup data loader ##
 train=torch.utils.data.DataLoader(d1,batch_size=BS, shuffle=True)
 test=torch.utils.data.DataLoader(d2,batch_size=len(d2), shuffle=False)
@@ -30,10 +35,12 @@ model=VAE(enc_out_dim=len(d1[0][0])-1,input_height=len(d1[0][0])-1)
 device = torch.device("cpu")    #Save the model to the CPU
 model.to(device)
 
-model.load_state_dict(torch.load('./models/robot_0809v2')) 
+# model.load_state_dict(torch.load('./models/human_0914v3')) 
+# model.load_state_dict(torch.load('./models/model_0906'))
 count=0
 
-# model.human_rollout(test,device)
+# zout,xout = model.human_rollout(test,device,iters=900)
+# zout2=model.sim_rollout(device,iters=990,z_init=zout[0])
 loss_test_rec=[]
 loss_train_rec=[]
 klf_lr=3.0
@@ -45,10 +52,11 @@ for i in range(5000):
     _, _, _, _, _, loss_test = model.test_human(test,device)
     loss_train_rec.append(sum(loss))
     loss_test_rec.append(sum(loss_test))
-    if count==15:     
+    if count==100:     
         model.scheduler.step()
+        # model.kl_weight=3.
         count=0
-        model.kl_weight=(klf_lr+kl_init_lr)-klf_lr*math.exp(-gamma*i/50)
+        # model.kl_weight=(klf_lr+kl_init_lr)-klf_lr*math.exp(-gamma*i/50)
 
     count+=1
     print(i, loss)

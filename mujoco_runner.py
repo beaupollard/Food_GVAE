@@ -54,6 +54,9 @@ class sim_runner():
 
     def get_state(self,data):
         return np.concatenate((data.qpos[self.qpos_ind],data.qvel[self.qvel_ind]))
+    
+    def rec_state(self,data):
+        return np.concatenate((data.qpos[self.qpos_ind],data.qvel[self.qvel_ind],data.qacc[self.qvel_ind]))
 
     def reset_data(self):
         self.data=copy.deepcopy(self.init_data)
@@ -65,12 +68,16 @@ class sim_runner():
             self.data.qvel[id]=vdes[i]
         mj.mj_forward(self.model,self.data)
 
-    def random_configuration(self):
+    def random_configuration(self,init=[]):
         self.reset_data()
         for i in range(len(self.data.qpos)):
-            self.data.qpos[i]+=np.random.normal(0.,0.05)
+            self.data.qpos[i]+=np.random.normal(0.,0.4)
         for i in range(len(self.data.qvel)):
-            self.data.qvel[i]+=np.random.normal(0.,0.01)
+            self.data.qvel[i]+=np.random.normal(0.,0.4)
+        if len(init)>0:
+            self.data.qpos[-1]=init[0]
+            self.data.qvel[-1]=init[1]
+
         mj.mj_forward(self.model,self.data)
 
     def setup_render(self):

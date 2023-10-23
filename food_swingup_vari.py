@@ -9,13 +9,13 @@ import matplotlib.pyplot as plt
 import re
 import random
 
-def set_up_mj(filename):
+def set_up_mj(filename,render=False):
     ## Setup Mujoco node ##
     active_names=['cart1']
     body_names=[{"name": 'cart1',"type": "joint", "qpos": [0], "qvel": [0]}, \
                 {"name": 'pend',"type": "joint", "qpos": [0], "qvel": [0]}, \
                 {"name": 'cart2',"type": "joint", "qpos": [0], "qvel": [0]}]
-    sim=sim_runner(filename=filename,active_names=active_names,tracked_bodies=body_names,render=False)
+    sim=sim_runner(filename=filename,active_names=active_names,tracked_bodies=body_names,render=render)
     return sim
 
 def change_line(target,new):
@@ -30,7 +30,7 @@ def change_line(target,new):
 def random_config():
     global target
     rand=random.randint(0, 2)
-    k = 15
+    k = 50
     if rand==0:
         # underdamped #
         beta = random.uniform(0.5, 0.95)
@@ -53,7 +53,7 @@ target = 'stiffness="200.0" damping="10.0"'
 mass = 0.537
 
 filename='assets/mass_cart_pend2.xml'
-
+# filename='assets/mass_cart_pend_over.xml'
 with open('assets/mass_cart_pend.xml') as f:
     lines = f.readlines()
 
@@ -61,18 +61,21 @@ sim=set_up_mj(filename='assets/mass_cart_pend.xml')
 
 Q=np.zeros((sim.nstate,sim.nstate))#0.01*np.eye((sim.nstate))
 Q[1,1]=1.0
-Q[0,0]=0.01
+Q[0,0]=0.5
+Q[2,2]=0.5
 Q[-2,-2]=0.1
 # Q[-1,-1]=0.01
 
 Q_term=copy.copy(Q)
-Q_term[0,0]=20.
+Q_term[0,0]=200.
+Q_term[2,2]=200
 
 Q_term[1,1]=1000.
 Q_term[-2,-2]=100.
 
-R=0.01*np.eye(sim.nact)
+R=0.5*np.eye(sim.nact)
 tspan=500
+
 xdes=sim.get_state(sim.data)
 xdes[1]=math.pi
 u_init=np.zeros((tspan,sim.nact))
@@ -84,35 +87,53 @@ num_runs=2000
 #     sim.step_forward([u_init[0,i]])
     # sim.render_image()
 urec=np.zeros((num_runs,tspan*2))
-xrec=np.zeros((num_runs,tspan*2,len(xdes)))
+xrec=np.zeros((num_runs,tspan*2,len(xdes)+3))
 rec_count=0
-for i in range(num_runs):
+rand_noise=1.0
+while rec_count<500:
+# for i in range(num_runs):
     rec_info=True
     random_config()    
     sim.random_configuration()
-    sim=set_up_mj(filename)
+    sim=set_up_mj(filename,render=False)
+    tspan=500+int(np.random.normal(0,50))
+    u_init=np.zeros((tspan,sim.nact))
+    xdes[1]=math.pi
+    # if (rec_count % 2) == 0:
+    # for i in range(tspan):
+    #     u_init[i]=-5.0*math.sin(2*math.pi*i*0.01)
+    # xdes[1]=-3*math.pi
+    # else:
+    for i in range(tspan):
+        u_init[i]=5.0*math.sin(2*math.pi*i*0.01)
+    xdes[1]=3*math.pi        
     ctrl = opt_ctrl(sim,xdes=xdes,tspan=tspan,Q=Q,R=R,Q_term=Q_term,u_init=u_init)
-    Uout, xout = ctrl.ilqr(max_iter=20)
+    # ctrl.tspan=400+int(np.random.normal(0,100))
+    Uout, xout = ctrl.ilqr(max_iter=30)
     us=[]
     xs=[]
-    for j in range(tspan*2):
+    for j in range(1000):
         
         if j<len(Uout):
-            u0=Uout[j]+np.random.normal(0,3.0)
+            u0=Uout[j]+np.random.normal(0,rand_noise)
         else:
-            if sim.get_state(sim.data)[1]>2*math.pi:#abs(sim.get_state(sim.data)[1]-xdes[1])>45*math.pi/180:
-                rec_info=False
-            u0=ctrl.lqr()
+            # if abs(-1.-math.cos(sim.get_state(sim.data)[1]))>0.1:
+            #     rec_info=False            
+            # if abs(sim.get_state(sim.data)[1])>2*math.pi:
+            #     rec_info=False
+            if abs(sim.get_state(sim.data)[1])<45*math.pi/180:
+                ctrl.xdes[1]=0.
+            u0=ctrl.lqr()+np.random.normal(0,rand_noise)
         # us.append(u0)
         sim.step_forward(u0)
         us.append(sim.data.actuator_force[0])
-        xs.append(sim.get_state(sim.data))
+        xs.append(sim.rec_state(sim.data))
     if rec_info:
         urec[rec_count,:]=np.array(us).flatten()
         xrec[rec_count,:,:]=np.array(xs)
         rec_count+=1
-np.save('data/xrec_rev8',xrec[:rec_count,:,:])
-np.save('data/urec_rev8',urec[:rec_count,:])
+np.save('data/xrec_unvaried_comb',xrec[:rec_count,:,:])
+np.save('data/urec_unvaried_comb',urec[:rec_count,:])
 
 # for i in range(tspan):
 #     sim.data.ctrl[0]=u_init[i]
